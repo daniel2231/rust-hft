@@ -41,8 +41,10 @@ async fn main() -> Result<()> {
             cfg_thread.risk.price_band_pct,
             cfg_thread.risk.max_orders_per_sec,
         );
+        let mut event_count: u64 = 0;
 
         for event in &market_rx {
+            event_count += 1;
             let queue_len = market_rx.len();
             if queue_len > 100 {
                 tracing::warn!(queue_len, "Orderbook thread: channel backlog exceeds 100 items");
@@ -54,8 +56,33 @@ async fn main() -> Result<()> {
                             let snap = book.snapshot();
                             let mid = snap.bids.first().map(|(p, _)| *p).unwrap_or(0.0);
                             let signal = strat.on_orderbook(&snap);
-                            if let Some(order) = risk.check(&signal, mid) {
-                                let _ = order_tx_thread.send(order);
+
+                            // Only call risk.check() for non-Hold signals
+                            match &signal {
+                                types::Signal::Hold => {}
+                                _ => {
+                                    match risk.check(&signal, mid) {
+                                        Ok(order) => {
+                                            let _ = order_tx_thread.send(order);
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("Risk check rejected order: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Every 1000 events, log stats
+                            if event_count % 1000 == 0 {
+                                let best_bid = snap.bids.first().map(|(p, q)| (*p, *q));
+                                let best_ask = snap.asks.first().map(|(p, q)| (*p, *q));
+                                info!(
+                                    events = event_count,
+                                    best_bid = ?best_bid,
+                                    best_ask = ?best_ask,
+                                    "Orderbook thread: {} events processed",
+                                    event_count
+                                );
                             }
                         }
                         Ok(false) => {
@@ -80,10 +107,15 @@ async fn main() -> Result<()> {
         }
     });
 
-    let executor = execution::PaperExecutor::new(cfg.symbol.clone());
+    let executor = Arc::new(execution::PaperExecutor::new(cfg.symbol.clone()));
     tokio::spawn(async move {
+        let mut order_count: u64 = 0;
         for order in &order_rx {
             executor.execute(&order);
+            order_count += 1;
+            if order_count % 100 == 0 {
+                executor.log_stats();
+            }
         }
     });
 

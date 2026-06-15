@@ -2,11 +2,16 @@ use crate::types::{Signal, ValidatedOrder};
 use chrono::Utc;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{error, info};
 
 pub struct PaperExecutor {
     symbol: String,
     log_path: String,
+    buy_count: AtomicU64,
+    sell_count: AtomicU64,
+    buy_volume: std::sync::Mutex<f64>,
+    sell_volume: std::sync::Mutex<f64>,
 }
 
 impl PaperExecutor {
@@ -15,6 +20,10 @@ impl PaperExecutor {
         Self {
             symbol,
             log_path: "logs/orders_paper.log".to_string(),
+            buy_count: AtomicU64::new(0),
+            sell_count: AtomicU64::new(0),
+            buy_volume: std::sync::Mutex::new(0.0),
+            sell_volume: std::sync::Mutex::new(0.0),
         }
     }
 
@@ -25,13 +34,37 @@ impl PaperExecutor {
             Signal::Hold => return,
         };
 
+        let signal_str = match &order.signal {
+            Signal::Buy { .. } => "Buy",
+            Signal::Sell { .. } => "Sell",
+            Signal::Hold => return,
+        };
+
+        // Update stats
+        match &order.signal {
+            Signal::Buy { qty, .. } => {
+                self.buy_count.fetch_add(1, Ordering::Relaxed);
+                if let Ok(mut vol) = self.buy_volume.lock() {
+                    *vol += qty;
+                }
+            }
+            Signal::Sell { qty, .. } => {
+                self.sell_count.fetch_add(1, Ordering::Relaxed);
+                if let Ok(mut vol) = self.sell_volume.lock() {
+                    *vol += qty;
+                }
+            }
+            Signal::Hold => {}
+        }
+
         let line = format!(
-            "[PAPER] {} | {} | {} | qty={:.4} | price={:.2} | client_id={}\n",
-            Utc::now().to_rfc3339(),
+            "[PAPER] {} | {} | {} | qty={:.4} | price={:.2} | signal={} | client_id={}\n",
+            Utc::now().format("%Y-%m-%dT%H:%M:%SZ"),
             side,
             self.symbol,
             qty,
             price,
+            signal_str,
             order.client_order_id,
         );
 
@@ -42,5 +75,24 @@ impl PaperExecutor {
         } else {
             error!("Failed to write to paper log");
         }
+    }
+
+    pub fn log_stats(&self) {
+        let buy_count = self.buy_count.load(Ordering::Relaxed);
+        let sell_count = self.sell_count.load(Ordering::Relaxed);
+        let buy_volume = self.buy_volume.lock().map(|v| *v).unwrap_or(0.0);
+        let sell_volume = self.sell_volume.lock().map(|v| *v).unwrap_or(0.0);
+
+        info!(
+            buy_count,
+            sell_count,
+            buy_volume,
+            sell_volume,
+            "Paper trading stats: buys={} sells={} buy_vol={:.4} sell_vol={:.4}",
+            buy_count,
+            sell_count,
+            buy_volume,
+            sell_volume,
+        );
     }
 }
