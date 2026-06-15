@@ -10,6 +10,7 @@ use crypto_trader::watchdog;
 use anyhow::Result;
 use crossbeam_channel::bounded;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[tokio::main]
@@ -122,14 +123,23 @@ async fn main() -> Result<()> {
     let wd = Arc::new(watchdog::Watchdog::new());
     wd.run(cfg.watchdog.timeout_secs, market_tx.clone());
 
+    let cancel = CancellationToken::new();
+
     tokio::select! {
-        result = ingestion::run_ingestion(cfg.exchange.ws_url.clone(), cfg.symbol.clone(), market_tx, Arc::clone(&wd)) => {
+        result = ingestion::run_ingestion(
+            cfg.exchange.ws_url.clone(),
+            cfg.symbol.clone(),
+            market_tx,
+            Arc::clone(&wd),
+            cancel.clone(),
+        ) => {
             if let Err(e) = result {
                 tracing::error!("Ingestion error: {}", e);
             }
         }
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Received Ctrl+C, shutting down");
+            cancel.cancel();
         }
     }
 

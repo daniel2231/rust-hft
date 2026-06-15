@@ -6,6 +6,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
@@ -34,8 +35,17 @@ pub async fn run_ingestion(
     symbol: String,
     tx: Sender<MarketEvent>,
     watchdog: Arc<Watchdog>,
+    cancel: CancellationToken,
 ) -> Result<()> {
-    run_ingestion_with_rest(ws_url, "https://fapi.binance.com".to_string(), symbol, tx, watchdog).await
+    run_ingestion_with_rest(
+        ws_url,
+        "https://fapi.binance.com".to_string(),
+        symbol,
+        tx,
+        watchdog,
+        cancel,
+    )
+    .await
 }
 
 pub async fn run_ingestion_with_rest(
@@ -44,6 +54,7 @@ pub async fn run_ingestion_with_rest(
     symbol: String,
     tx: Sender<MarketEvent>,
     watchdog: Arc<Watchdog>,
+    cancel: CancellationToken,
 ) -> Result<()> {
     let stream = format!(
         "{}/{}@depth@100ms/{}@aggTrade",
@@ -54,17 +65,20 @@ pub async fn run_ingestion_with_rest(
     info!("Connecting to {}", stream);
 
     loop {
+        if cancel.is_cancelled() {
+            info!("Ingestion cancelled");
+            return Ok(());
+        }
+
         match connect_async(&stream).await {
             Ok((ws_stream, _)) => {
                 info!("WebSocket connected");
                 let (mut write, mut read) = ws_stream.split();
 
-                // Spawn task to fetch snapshot after WS connection established
                 let rest_url_clone = rest_url.clone();
                 let symbol_clone = symbol.clone();
                 let tx_snap = tx.clone();
                 tokio::spawn(async move {
-                    // Small delay to ensure some WS events are buffered first
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     match fetch_snapshot(&rest_url_clone, &symbol_clone).await {
                         Ok(snap) => {
@@ -77,50 +91,59 @@ pub async fn run_ingestion_with_rest(
                     }
                 });
 
-                while let Some(msg) = read.next().await {
-                    match msg {
-                        Ok(Message::Text(text)) => {
-                            let raw = text.as_str();
-                            tracing::debug!("RAW: {}", raw);
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => {
+                            info!("Ingestion cancelled, closing WebSocket");
+                            return Ok(());
+                        }
+                        msg = read.next() => {
+                            match msg {
+                                Some(Ok(Message::Text(text))) => {
+                                    let raw = text.as_str();
+                                    tracing::debug!("RAW: {}", raw);
 
-                            if let Ok(v) = serde_json::from_str::<Value>(raw) {
-                                let event_type =
-                                    v.get("e").and_then(|e| e.as_str()).unwrap_or("");
-                                match event_type {
-                                    "depthUpdate" => {
-                                        if let Ok(update) =
-                                            serde_json::from_value::<DepthUpdate>(v)
-                                        {
-                                            watchdog.touch();
-                                            let _ = tx.send(MarketEvent::DepthUpdate(update));
+                                    if let Ok(v) = serde_json::from_str::<Value>(raw) {
+                                        let event_type =
+                                            v.get("e").and_then(|e| e.as_str()).unwrap_or("");
+                                        match event_type {
+                                            "depthUpdate" => {
+                                                if let Ok(update) =
+                                                    serde_json::from_value::<DepthUpdate>(v)
+                                                {
+                                                    watchdog.touch();
+                                                    let _ = tx.send(MarketEvent::DepthUpdate(update));
+                                                }
+                                            }
+                                            "aggTrade" => {
+                                                if let Ok(trade) =
+                                                    serde_json::from_value::<Trade>(v)
+                                                {
+                                                    watchdog.touch();
+                                                    let _ = tx.send(MarketEvent::Trade(trade));
+                                                }
+                                            }
+                                            _ => {
+                                                info!("Unknown event type: {}", event_type);
+                                            }
                                         }
-                                    }
-                                    "aggTrade" => {
-                                        if let Ok(trade) =
-                                            serde_json::from_value::<Trade>(v)
-                                        {
-                                            watchdog.touch();
-                                            let _ = tx.send(MarketEvent::Trade(trade));
-                                        }
-                                    }
-                                    _ => {
-                                        info!("Unknown event type: {}", event_type);
                                     }
                                 }
+                                Some(Ok(Message::Ping(data))) => {
+                                    let _ = write.send(Message::Pong(data)).await;
+                                }
+                                Some(Ok(Message::Close(_))) => {
+                                    warn!("WebSocket closed by server");
+                                    break;
+                                }
+                                Some(Err(e)) => {
+                                    error!("WebSocket error: {}", e);
+                                    break;
+                                }
+                                None => break,
+                                _ => {}
                             }
                         }
-                        Ok(Message::Ping(data)) => {
-                            let _ = write.send(Message::Pong(data)).await;
-                        }
-                        Ok(Message::Close(_)) => {
-                            warn!("WebSocket closed by server");
-                            break;
-                        }
-                        Err(e) => {
-                            error!("WebSocket error: {}", e);
-                            break;
-                        }
-                        _ => {}
                     }
                 }
             }
@@ -131,6 +154,12 @@ pub async fn run_ingestion_with_rest(
 
         let _ = tx.send(MarketEvent::Reconnect);
         warn!("Reconnecting in 3s...");
-        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                info!("Ingestion cancelled during reconnect wait");
+                return Ok(());
+            }
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(3)) => {}
+        }
     }
 }
