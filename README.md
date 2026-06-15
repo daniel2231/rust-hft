@@ -25,44 +25,180 @@ Multi-threaded pipeline designed for minimal GC latency:
 | M5 | ✅ | Backtesting harness |
 | M6 | 🔲 | Strategy implementation, cloud VM deployment |
 
-## Quick Start
+---
 
-### Prerequisites
+## Prerequisites
+
 - Rust 1.82+
 - (Optional) Binance API key for live mode
 
-### Run (paper mode)
+---
+
+## 실행 방법
+
+### 1. Paper 트레이딩 모드로 실행 (기본)
+
+실제 주문 없이 WebSocket으로 시장 데이터를 수신하고 전략 신호를 로그로만 기록합니다.
 
 ```bash
 cp .env.example .env
-# Edit .env with your API keys (not required for paper mode)
 RUST_LOG=info cargo run
 ```
 
-### Configuration
+로그 레벨 조정:
 
-Edit `config/default.toml`:
-
-```toml
-mode = "paper"   # "paper" or "live"
-symbol = "BTCUSDT"
-
-[risk]
-max_order_qty = 0.01
-min_free_balance_usdt = 100.0
-price_band_pct = 1.0
-max_orders_per_sec = 5
+```bash
+RUST_LOG=debug cargo run   # raw 메시지까지 출력
+RUST_LOG=warn cargo run    # 경고·오류만 출력
 ```
 
-### Tests
+실행 시 출력 예시:
+
+```
+2026-06-15T09:00:00Z  INFO crypto_trader::ingestion: Connecting to wss://fstream.binance.com/ws/btcusdt@depth@100ms/...
+2026-06-15T09:00:00Z  INFO crypto_trader::ingestion: WebSocket connected
+2026-06-15T09:00:01Z  INFO crypto_trader::orderbook: Snapshot applied last_update_id=123456 symbol="BTCUSDT"
+2026-06-15T09:00:01Z  INFO crypto_trader::main: [event=1000] best_bid=65000.10 best_ask=65001.20
+```
+
+Paper 트레이딩 주문 로그는 `logs/orders_paper.log`에 누적됩니다:
+
+```
+[PAPER] 2026-06-15T09:00:05Z | BUY | BTCUSDT | qty=0.0100 | price=65000.00 | signal=Buy | client_id=uuid-xxxx
+```
+
+### 2. 킬 스위치 (긴급 중단)
+
+실행 중에 모든 주문을 즉시 차단하려면 프로젝트 루트에 `HALT` 파일을 생성합니다:
+
+```bash
+touch HALT        # 주문 차단 시작
+rm HALT           # 주문 재개
+```
+
+### 3. 종료
+
+`Ctrl+C`로 그레이스풀 셧다운됩니다.
+
+---
+
+## 테스트 방법
+
+### 전체 테스트 실행
 
 ```bash
 cargo test
 ```
 
-## Strategy Interface
+예상 출력:
 
-Implement the `Strategy` trait in `src/strategy/`:
+```
+running 5 tests (orderbook_tests)
+test tests::test_snapshot_apply ... ok
+test tests::test_diff_apply ... ok
+test tests::test_sequence_gap_detection ... ok
+test tests::test_qty_zero_removes_level ... ok
+test tests::test_buffering_state ... ok
+
+running 5 tests (risk_tests)
+test tests::test_kill_switch ... ok
+test tests::test_max_order_qty ... ok
+test tests::test_fat_finger_check ... ok
+test tests::test_valid_order_passes ... ok
+test tests::test_insufficient_balance ... ok
+
+running 3 tests (backtest_tests)
+test tests::test_synthetic_data_generation ... ok
+test tests::test_backtester_noop_strategy ... ok
+test tests::test_pnl_calculation ... ok
+
+test result: ok. 13 passed; 0 failed
+```
+
+### 특정 테스트만 실행
+
+```bash
+cargo test orderbook        # 오더북 테스트만
+cargo test risk             # 리스크 테스트만
+cargo test backtest         # 백테스트 테스트만
+cargo test test_pnl         # 이름에 "test_pnl"이 포함된 테스트만
+```
+
+### 테스트 출력 확인 (println! 포함)
+
+```bash
+cargo test -- --nocapture
+```
+
+---
+
+## 백테스트
+
+### 합성 데이터로 실행 (빠른 검증)
+
+```bash
+cargo run --bin backtest
+```
+
+출력 예시:
+
+```
+=== Backtest Result ===
+Total trades : 0
+Buy trades   : 0
+Sell trades  : 0
+Total volume : 0.0000
+Realized PnL : 0.00 USDT
+======================
+```
+
+> `NoOpStrategy`는 항상 Hold를 반환하므로 거래가 발생하지 않습니다. 전략 구현 후 교체하면 실제 PnL이 계산됩니다.
+
+### 히스토리컬 데이터 파일로 실행
+
+```bash
+cargo run --bin backtest -- path/to/data.ndjson
+```
+
+파일 포맷: 한 줄에 하나의 Binance `depthUpdate` JSON 이벤트.
+
+```json
+{"e":"depthUpdate","E":1718445600000,"s":"BTCUSDT","U":100001,"u":100010,"pu":100000,"b":[["65000.00","1.5"]],"a":[["65001.00","2.0"]]}
+{"e":"depthUpdate","E":1718445600100,"s":"BTCUSDT","U":100011,"u":100020,"pu":100010,"b":[["65000.00","0.0"]],"a":[["65002.00","1.0"]]}
+```
+
+---
+
+## 설정
+
+`config/default.toml` 수정:
+
+```toml
+mode = "paper"     # "paper" 또는 "live" (live는 M6 이후)
+symbol = "BTCUSDT"
+
+[risk]
+max_order_qty = 0.01          # 최대 주문 수량 (BTC)
+min_free_balance_usdt = 100.0 # 최소 잔고 (USDT)
+price_band_pct = 1.0          # 팻 핑거 가드: mid price 대비 ±1% 초과 주문 차단
+max_orders_per_sec = 5        # 초당 최대 주문 수
+
+[orderbook]
+depth_levels = 20             # 오더북 상위 N 레벨 유지
+
+[watchdog]
+timeout_secs = 30             # 30초간 메시지 없으면 자동 재연결
+
+[exchange]
+ws_url = "wss://fstream.binance.com/ws"
+rest_url = "https://fapi.binance.com"
+```
+
+---
+
+## Strategy 인터페이스
+
+`src/strategy/` 디렉토리에서 `Strategy` trait 구현:
 
 ```rust
 pub trait Strategy: Send {
@@ -70,29 +206,20 @@ pub trait Strategy: Send {
 }
 ```
 
-See `src/strategy/README.md` for details.
+구현 가이드: `src/strategy/README.md` 참조.
 
-## Security
+---
 
+## 보안
 
-- API keys are loaded from environment variables only — never commit `.env`
-- Paper mode makes no real orders
+- API 키는 환경변수로만 관리 — `.env` 파일은 절대 커밋 금지
+- Paper 모드는 거래소 API를 호출하지 않음
 
-## Backtesting
-
-Run with synthetic data:
-```bash
-cargo run --bin backtest
-```
-
-Run with historical data file (NDJSON, one DepthUpdate per line):
-```bash
-cargo run --bin backtest -- path/to/data.ndjson
-```
-
-Data format: each line must be a valid Binance `depthUpdate` event JSON.
+---
 
 ## Phase Roadmap
 
-- **Phase 1 (current):** Mac Mini local development, RTT ~40–80ms, correctness focus
-- **Phase 2:** Cloud VM (AWS ap-northeast-1), RTT ~2–5ms, live trading
+| Phase | 환경 | RTT | 목적 |
+|-------|------|-----|------|
+| Phase 1 (현재) | Mac Mini 로컬 | ~40–80ms | 기능 개발 및 정확성 검증 |
+| Phase 2 | AWS ap-northeast-1 (도쿄) | ~2–5ms | 전략 구현 후 실운영 |
