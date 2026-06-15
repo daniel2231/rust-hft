@@ -101,17 +101,22 @@ impl Orderbook {
         let valid_events: Vec<DepthUpdate> = match first_valid {
             Some(idx) => buffered[idx..].to_vec(),
             None => {
-                // No valid buffered event — go live from snapshot id
                 self.state = SyncState::Live { last_update_id: s };
                 info!(symbol = %self.symbol, "Live (no buffered events to apply)");
                 return true;
             }
         };
 
+        // Apply buffered events starting from the first valid one.
+        // pu continuity is checked only between consecutive events, NOT against the snapshot ID.
         let mut last_id = s;
+        let mut first = true;
         for event in &valid_events {
-            // Verify sequence
-            if event.prev_last_update_id != last_id {
+            if first {
+                // First event: condition U<=S+1 AND u>=S+1 already verified above.
+                // pu may not equal S — that's OK per Binance spec.
+                first = false;
+            } else if event.prev_last_update_id != last_id {
                 warn!(
                     expected = last_id,
                     got = event.prev_last_update_id,
@@ -142,7 +147,7 @@ impl Orderbook {
                 let expected = *last_update_id;
                 if update.prev_last_update_id != expected {
                     if update.last_update_id <= expected {
-                        // Stale event (older than our current state) — skip silently
+                        // Fully stale: entire event range is before our state — skip
                         tracing::debug!(
                             expected,
                             event_u = update.last_update_id,
@@ -150,15 +155,25 @@ impl Orderbook {
                         );
                         return Ok(false);
                     }
-                    // True gap: events were missed
-                    error!(
-                        expected,
-                        got = update.prev_last_update_id,
-                        "Sequence gap detected — resetting to Buffering"
-                    );
-                    self.reset();
-                    resync_needed.store(true, std::sync::atomic::Ordering::Relaxed);
-                    return Ok(false);
+                    if update.prev_last_update_id < expected && update.last_update_id > expected {
+                        // Event range COVERS our expected ID — apply and advance
+                        tracing::debug!(
+                            expected,
+                            event_pu = update.prev_last_update_id,
+                            event_u = update.last_update_id,
+                            "Applying spanning event"
+                        );
+                    } else {
+                        // True gap: events were missed
+                        error!(
+                            expected,
+                            got = update.prev_last_update_id,
+                            "Sequence gap detected — resetting to Buffering"
+                        );
+                        self.reset();
+                        resync_needed.store(true, std::sync::atomic::Ordering::Relaxed);
+                        return Ok(false);
+                    }
                 }
                 Self::apply_levels(&mut self.bids, &mut self.asks, update);
                 self.state = SyncState::Live { last_update_id: update.last_update_id };
