@@ -14,6 +14,20 @@ Multi-threaded pipeline designed for minimal GC latency:
 - **Thread 2 (OS thread):** Orderbook maintenance, strategy evaluation, risk checks
 - **Bridge:** `crossbeam-channel` between async and sync worlds
 
+### 이벤트(Event)란?
+
+로그에 나오는 "이벤트 1개"는 **바이낸스가 100ms(0.1초)마다 보내주는 호가 변동 묶음 1개**입니다.
+
+바이낸스에서는 매 순간 수많은 주문이 들어오고, 취소되고, 체결됩니다. 이 변동을 건별로 모두 전송하면 데이터가 너무 많아지기 때문에, 바이낸스는 **0.1초 동안 쌓인 변동 내용을 하나로 묶어** 전송합니다.
+
+예시:
+```
+"66,674.7 달러에 1.193 BTC 사겠다는 주문이 새로 들어왔다"
+"66,800.0 달러에 0.5 BTC 팔겠다는 주문이 취소됐다"
+```
+
+이런 변동 내용의 묶음이 이벤트 1개입니다. BTCUSDT처럼 거래가 활발한 종목은 0.1초마다 거의 항상 변동이 있어 초당 약 10개의 이벤트가 꾸준히 들어옵니다.
+
 ## Milestones
 
 | Milestone | Status | Description |
