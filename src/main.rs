@@ -140,6 +140,7 @@ async fn main() -> Result<()> {
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Received Ctrl+C, shutting down");
             cancel.cancel();
+            std::process::exit(0);
         }
     }
 
