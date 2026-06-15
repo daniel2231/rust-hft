@@ -5,9 +5,11 @@ use crypto_trader::orderbook;
 use crypto_trader::risk;
 use crypto_trader::strategy;
 use crypto_trader::types;
+use crypto_trader::watchdog;
 
 use anyhow::Result;
 use crossbeam_channel::bounded;
+use std::sync::Arc;
 use tracing::info;
 
 #[tokio::main]
@@ -41,6 +43,10 @@ async fn main() -> Result<()> {
         );
 
         for event in &market_rx {
+            let queue_len = market_rx.len();
+            if queue_len > 100 {
+                tracing::warn!(queue_len, "Orderbook thread: channel backlog exceeds 100 items");
+            }
             match event {
                 types::MarketEvent::DepthUpdate(update) => {
                     match book.handle_update(&update) {
@@ -81,7 +87,19 @@ async fn main() -> Result<()> {
         }
     });
 
-    ingestion::run_ingestion(cfg.exchange.ws_url.clone(), cfg.symbol.clone(), market_tx).await?;
+    let wd = Arc::new(watchdog::Watchdog::new());
+    wd.run(cfg.watchdog.timeout_secs, market_tx.clone());
+
+    tokio::select! {
+        result = ingestion::run_ingestion(cfg.exchange.ws_url.clone(), cfg.symbol.clone(), market_tx, Arc::clone(&wd)) => {
+            if let Err(e) = result {
+                tracing::error!("Ingestion error: {}", e);
+            }
+        }
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("Received Ctrl+C, shutting down");
+        }
+    }
 
     Ok(())
 }

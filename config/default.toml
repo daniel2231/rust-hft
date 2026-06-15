@@ -13,3 +13,6 @@ depth_levels = 20
 [exchange]
 ws_url = "wss://fstream.binance.com/ws"
 rest_url = "https://fapi.binance.com"
+
+[watchdog]
+timeout_secs = 30

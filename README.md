@@ -20,7 +20,7 @@ Multi-threaded pipeline designed for minimal GC latency:
 |-----------|--------|-------------|
 | M1 | ✅ | Project setup, WebSocket connection, raw stream output |
 | M2 | ✅ | Orderbook sync (Snapshot+Diff), unit tests |
-| M3 | 🔲 | Multi-thread pipeline, crossbeam channels, reconnect watchdog |
+| M3 | ✅ | Multi-thread pipeline, crossbeam channels, watchdog, graceful shutdown |
 | M4 | 🔲 | Risk checks + paper trading mode |
 | M5 | 🔲 | Backtesting harness |
 | M6 | 🔲 | Strategy implementation, cloud VM deployment |

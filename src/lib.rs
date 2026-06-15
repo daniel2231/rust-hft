@@ -6,3 +6,4 @@ pub mod orderbook;
 pub mod risk;
 pub mod strategy;
 pub mod types;
+pub mod watchdog;

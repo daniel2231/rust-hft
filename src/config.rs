@@ -9,6 +9,7 @@ pub struct Config {
     pub risk: RiskConfig,
     pub orderbook: OrderbookConfig,
     pub exchange: ExchangeConfig,
+    pub watchdog: WatchdogConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -28,6 +29,11 @@ pub struct OrderbookConfig {
 pub struct ExchangeConfig {
     pub ws_url: String,
     pub rest_url: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WatchdogConfig {
+    pub timeout_secs: u64,
 }
 
 pub fn load_config(path: &str) -> Result<Config> {

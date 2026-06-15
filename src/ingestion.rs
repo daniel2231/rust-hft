@@ -1,9 +1,11 @@
 use crate::types::{DepthSnapshot, DepthUpdate, MarketEvent, Trade};
+use crate::watchdog::Watchdog;
 use anyhow::Result;
 use crossbeam_channel::Sender;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
+use std::sync::Arc;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
@@ -31,8 +33,9 @@ pub async fn run_ingestion(
     ws_url: String,
     symbol: String,
     tx: Sender<MarketEvent>,
+    watchdog: Arc<Watchdog>,
 ) -> Result<()> {
-    run_ingestion_with_rest(ws_url, "https://fapi.binance.com".to_string(), symbol, tx).await
+    run_ingestion_with_rest(ws_url, "https://fapi.binance.com".to_string(), symbol, tx, watchdog).await
 }
 
 pub async fn run_ingestion_with_rest(
@@ -40,6 +43,7 @@ pub async fn run_ingestion_with_rest(
     rest_url: String,
     symbol: String,
     tx: Sender<MarketEvent>,
+    watchdog: Arc<Watchdog>,
 ) -> Result<()> {
     let stream = format!(
         "{}/{}@depth@100ms/{}@aggTrade",
@@ -87,6 +91,7 @@ pub async fn run_ingestion_with_rest(
                                         if let Ok(update) =
                                             serde_json::from_value::<DepthUpdate>(v)
                                         {
+                                            watchdog.touch();
                                             let _ = tx.send(MarketEvent::DepthUpdate(update));
                                         }
                                     }
@@ -94,6 +99,7 @@ pub async fn run_ingestion_with_rest(
                                         if let Ok(trade) =
                                             serde_json::from_value::<Trade>(v)
                                         {
+                                            watchdog.touch();
                                             let _ = tx.send(MarketEvent::Trade(trade));
                                         }
                                     }
