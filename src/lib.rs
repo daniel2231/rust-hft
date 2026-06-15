@@ -1,3 +1,4 @@
+pub mod backtest;
 pub mod config;
 pub mod execution;
 pub mod ingestion;

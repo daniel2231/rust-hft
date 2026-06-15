@@ -22,7 +22,7 @@ Multi-threaded pipeline designed for minimal GC latency:
 | M2 | ✅ | Orderbook sync (Snapshot+Diff), unit tests |
 | M3 | ✅ | Multi-thread pipeline, crossbeam channels, watchdog, graceful shutdown |
 | M4 | ✅ | Risk checks + paper trading mode |
-| M5 | 🔲 | Backtesting harness |
+| M5 | ✅ | Backtesting harness |
 | M6 | 🔲 | Strategy implementation, cloud VM deployment |
 
 ## Quick Start
@@ -77,6 +77,20 @@ See `src/strategy/README.md` for details.
 
 - API keys are loaded from environment variables only — never commit `.env`
 - Paper mode makes no real orders
+
+## Backtesting
+
+Run with synthetic data:
+```bash
+cargo run --bin backtest
+```
+
+Run with historical data file (NDJSON, one DepthUpdate per line):
+```bash
+cargo run --bin backtest -- path/to/data.ndjson
+```
+
+Data format: each line must be a valid Binance `depthUpdate` event JSON.
 
 ## Phase Roadmap
 

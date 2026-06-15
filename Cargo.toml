@@ -7,6 +7,10 @@ edition = "2021"
 name = "crypto-trader"
 path = "src/main.rs"
 
+[[bin]]
+name = "backtest"
+path = "src/bin/backtest.rs"
+
 [dependencies]
 tokio = { version = "1.52", features = ["full"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
