@@ -141,6 +141,16 @@ impl Orderbook {
             SyncState::Live { last_update_id } => {
                 let expected = *last_update_id;
                 if update.prev_last_update_id != expected {
+                    if update.last_update_id <= expected {
+                        // Stale event (older than our current state) — skip silently
+                        tracing::debug!(
+                            expected,
+                            event_u = update.last_update_id,
+                            "Skipping stale event"
+                        );
+                        return Ok(false);
+                    }
+                    // True gap: events were missed
                     error!(
                         expected,
                         got = update.prev_last_update_id,
