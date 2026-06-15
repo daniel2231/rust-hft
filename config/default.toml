@@ -1,0 +1,15 @@
+mode = "paper"
+symbol = "BTCUSDT"
+
+[risk]
+max_order_qty = 0.01
+min_free_balance_usdt = 100.0
+price_band_pct = 1.0
+max_orders_per_sec = 5
+
+[orderbook]
+depth_levels = 20
+
+[exchange]
+ws_url = "wss://fstream.binance.com/ws"
+rest_url = "https://fapi.binance.com"
