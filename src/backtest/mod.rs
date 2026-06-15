@@ -59,7 +59,7 @@ impl Backtester {
 
         for event in events {
             let timestamp_ms = event.event_time;
-            match self.orderbook.handle_update(&event) {
+            match self.orderbook.handle_update(&event, &std::sync::atomic::AtomicBool::new(false)) {
                 Ok(true) => {
                     let snap = self.orderbook.snapshot();
                     let mid = snap.bids.first().map(|(p, _)| *p).unwrap_or(0.0);

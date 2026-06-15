@@ -9,6 +9,7 @@ use crypto_trader::watchdog;
 
 use anyhow::Result;
 use crossbeam_channel::bounded;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -28,8 +29,11 @@ async fn main() -> Result<()> {
     let (market_tx, market_rx) = bounded::<types::MarketEvent>(1024);
     let (order_tx, order_rx) = bounded::<types::ValidatedOrder>(64);
 
+    let resync_needed = Arc::new(AtomicBool::new(false));
+
     let cfg_thread = cfg.clone();
     let order_tx_thread = order_tx.clone();
+    let resync_thread = Arc::clone(&resync_needed);
     std::thread::spawn(move || {
         let mut book = orderbook::Orderbook::new(
             cfg_thread.symbol.clone(),
@@ -52,7 +56,7 @@ async fn main() -> Result<()> {
             }
             match event {
                 types::MarketEvent::DepthUpdate(update) => {
-                    match book.handle_update(&update) {
+                    match book.handle_update(&update, &resync_thread) {
                         Ok(true) => {
                             let snap = book.snapshot();
                             let mid = snap.bids.first().map(|(p, _)| *p).unwrap_or(0.0);
@@ -132,6 +136,7 @@ async fn main() -> Result<()> {
             market_tx,
             Arc::clone(&wd),
             cancel.clone(),
+            Arc::clone(&resync_needed),
         ) => {
             if let Err(e) = result {
                 tracing::error!("Ingestion error: {}", e);

@@ -128,8 +128,9 @@ impl Orderbook {
         true
     }
 
-    /// Returns true if update was applied, false if sequence gap (caller should reset).
-    pub fn handle_update(&mut self, update: &DepthUpdate) -> Result<bool> {
+    /// Returns true if update was applied, false if buffering or sequence gap.
+    /// Sets resync_needed=true on sequence gap so ingestion re-fetches snapshot.
+    pub fn handle_update(&mut self, update: &DepthUpdate, resync_needed: &std::sync::atomic::AtomicBool) -> Result<bool> {
         match &self.state {
             SyncState::Buffering(buf) => {
                 let mut buf = buf.clone();
@@ -146,6 +147,7 @@ impl Orderbook {
                         "Sequence gap detected — resetting to Buffering"
                     );
                     self.reset();
+                    resync_needed.store(true, std::sync::atomic::Ordering::Relaxed);
                     return Ok(false);
                 }
                 Self::apply_levels(&mut self.bids, &mut self.asks, update);
@@ -157,7 +159,7 @@ impl Orderbook {
 
     /// Legacy method kept for compatibility — delegates to handle_update.
     pub fn apply_update(&mut self, update: &DepthUpdate) -> Result<bool> {
-        self.handle_update(update)
+        self.handle_update(update, &std::sync::atomic::AtomicBool::new(false))
     }
 
     pub fn snapshot(&self) -> OrderbookSnapshot {

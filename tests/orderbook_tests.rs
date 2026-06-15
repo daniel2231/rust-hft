@@ -35,7 +35,7 @@ fn test_snapshot_apply() {
     // Buffer an event that satisfies the sync condition for snapshot lastUpdateId=100.
     // U=101 <= S+1=101 AND u=102 >= S+1=101; pu=100 == S so continuity holds.
     let update = make_update(101, 102, 100, vec![], vec![]);
-    book.handle_update(&update).unwrap();
+    book.handle_update(&update, &std::sync::atomic::AtomicBool::new(false)).unwrap();
 
     let snap = make_snapshot(100, vec![("50000.0", "1.5"), ("49999.0", "2.0")],
                                     vec![("50001.0", "0.5")]);
@@ -61,7 +61,7 @@ fn test_diff_apply() {
     // Buffer a diff that satisfies the sync condition for snapshot with lastUpdateId=200.
     // U=201 <= 201, u=202 >= 201, pu=200 == S
     let buf_update = make_update(201, 202, 200, vec![], vec![]);
-    book.handle_update(&buf_update).unwrap();
+    book.handle_update(&buf_update, &std::sync::atomic::AtomicBool::new(false)).unwrap();
 
     let snap = make_snapshot(200, vec![("50000.0", "1.0")], vec![("50001.0", "1.0")]);
     assert!(book.handle_snapshot(&snap));
@@ -71,7 +71,7 @@ fn test_diff_apply() {
     let live_update = make_update(203, 203, 202,
         vec![("49999.0", "3.0")],   // new bid level
         vec![("50002.0", "0.8")]);  // new ask level
-    let applied = book.handle_update(&live_update).unwrap();
+    let applied = book.handle_update(&live_update, &std::sync::atomic::AtomicBool::new(false)).unwrap();
     assert!(applied);
 
     let ob = book.snapshot();
@@ -94,14 +94,14 @@ fn test_sequence_gap_detection() {
 
     // Buffer + snapshot → Live
     let buf = make_update(301, 302, 300, vec![], vec![]);
-    book.handle_update(&buf).unwrap();
+    book.handle_update(&buf, &std::sync::atomic::AtomicBool::new(false)).unwrap();
     let snap = make_snapshot(300, vec![("50000.0", "1.0")], vec![("50001.0", "1.0")]);
     assert!(book.handle_snapshot(&snap));
     assert!(book.is_live());
 
     // Send update with wrong pu (expected 302, send 999)
     let bad_update = make_update(303, 303, 999, vec![], vec![]);
-    let result = book.handle_update(&bad_update).unwrap();
+    let result = book.handle_update(&bad_update, &std::sync::atomic::AtomicBool::new(false)).unwrap();
     assert!(!result, "Expected false on sequence gap");
     assert!(!book.is_live(), "Orderbook should have reset to Buffering after gap");
 }
@@ -113,7 +113,7 @@ fn test_qty_zero_removes_level() {
 
     // Buffer event satisfying sync condition for snapshot lastUpdateId=400
     let buf = make_update(401, 402, 400, vec![], vec![]);
-    book.handle_update(&buf).unwrap();
+    book.handle_update(&buf, &std::sync::atomic::AtomicBool::new(false)).unwrap();
 
     // Snapshot with two bid levels
     let snap = make_snapshot(400, vec![("50000.0", "1.0"), ("49999.0", "2.0")], vec![]);
@@ -123,7 +123,7 @@ fn test_qty_zero_removes_level() {
     let remove_update = make_update(403, 403, 402,
         vec![("50000.0", "0.0")],
         vec![]);
-    let applied = book.handle_update(&remove_update).unwrap();
+    let applied = book.handle_update(&remove_update, &std::sync::atomic::AtomicBool::new(false)).unwrap();
     assert!(applied);
 
     let ob = book.snapshot();
@@ -148,9 +148,9 @@ fn test_buffering_state() {
     let u3 = make_update(502, 503, 501, vec![("49980.0", "1.0")], vec![]);
 
     // All should be buffered, not applied
-    assert!(!book.handle_update(&u1).unwrap());
-    assert!(!book.handle_update(&u2).unwrap());
-    assert!(!book.handle_update(&u3).unwrap());
+    assert!(!book.handle_update(&u1, &std::sync::atomic::AtomicBool::new(false)).unwrap());
+    assert!(!book.handle_update(&u2, &std::sync::atomic::AtomicBool::new(false)).unwrap());
+    assert!(!book.handle_update(&u3, &std::sync::atomic::AtomicBool::new(false)).unwrap());
     assert!(!book.is_live());
 
     // Send snapshot; first valid buffered event is u2 (u1 is discarded)

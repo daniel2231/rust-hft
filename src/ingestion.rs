@@ -5,6 +5,7 @@ use crossbeam_channel::Sender;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tokio_tungstenite::connect_async;
@@ -36,6 +37,7 @@ pub async fn run_ingestion(
     tx: Sender<MarketEvent>,
     watchdog: Arc<Watchdog>,
     cancel: CancellationToken,
+    resync_needed: Arc<AtomicBool>,
 ) -> Result<()> {
     run_ingestion_with_rest(
         ws_url,
@@ -44,6 +46,7 @@ pub async fn run_ingestion(
         tx,
         watchdog,
         cancel,
+        resync_needed,
     )
     .await
 }
@@ -55,6 +58,7 @@ pub async fn run_ingestion_with_rest(
     tx: Sender<MarketEvent>,
     watchdog: Arc<Watchdog>,
     cancel: CancellationToken,
+    resync_needed: Arc<AtomicBool>,
 ) -> Result<()> {
     let stream = format!(
         "{}/{}@depth@100ms/{}@aggTrade",
@@ -75,11 +79,14 @@ pub async fn run_ingestion_with_rest(
                 info!("WebSocket connected");
                 let (mut write, mut read) = ws_stream.split();
 
+                // Fetch initial snapshot
                 let rest_url_clone = rest_url.clone();
                 let symbol_clone = symbol.clone();
                 let tx_snap = tx.clone();
+                let resync_clone = Arc::clone(&resync_needed);
                 tokio::spawn(async move {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    resync_clone.store(false, Ordering::Relaxed);
                     match fetch_snapshot(&rest_url_clone, &symbol_clone).await {
                         Ok(snap) => {
                             info!("Snapshot fetched, lastUpdateId={}", snap.last_update_id);
@@ -87,6 +94,38 @@ pub async fn run_ingestion_with_rest(
                         }
                         Err(e) => {
                             error!("Failed to fetch snapshot: {}", e);
+                        }
+                    }
+                });
+
+                // Resync poller: checks flag every 200ms and re-fetches snapshot if needed
+                let resync_poll = Arc::clone(&resync_needed);
+                let rest_url_resync = rest_url.clone();
+                let symbol_resync = symbol.clone();
+                let tx_resync = tx.clone();
+                let cancel_resync = cancel.clone();
+                tokio::spawn(async move {
+                    loop {
+                        tokio::select! {
+                            _ = cancel_resync.cancelled() => break,
+                            _ = tokio::time::sleep(tokio::time::Duration::from_millis(200)) => {
+                                if resync_poll.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+                                    warn!("Resync requested — re-fetching snapshot");
+                                    // Wait briefly so the orderbook thread has buffered some new events
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                    match fetch_snapshot(&rest_url_resync, &symbol_resync).await {
+                                        Ok(snap) => {
+                                            info!("Resync snapshot fetched, lastUpdateId={}", snap.last_update_id);
+                                            let _ = tx_resync.send(MarketEvent::DepthSnapshot(snap));
+                                        }
+                                        Err(e) => {
+                                            error!("Resync snapshot fetch failed: {}", e);
+                                            // Set flag again so we retry
+                                            resync_poll.store(true, Ordering::Relaxed);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 });
