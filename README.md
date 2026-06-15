@@ -36,20 +36,27 @@ Multi-threaded pipeline designed for minimal GC latency:
 
 ## 실행 방법
 
+> **바이너리가 두 개**(`crypto-trader`, `backtest`)이므로 반드시 `--bin`을 명시해야 합니다.
+>
+> | 명령어 | 언제 사용 |
+> |--------|-----------|
+> | `cargo run --bin crypto-trader` | **실제 운영** — Binance WebSocket에 연결해 실시간 데이터 수신 |
+> | `cargo run --bin backtest` | **전략 검증** — 과거 데이터를 파일로 불러와 PnL 시뮬레이션 |
+
 ### 1. Paper 트레이딩 모드로 실행 (기본)
 
 실제 주문 없이 WebSocket으로 시장 데이터를 수신하고 전략 신호를 로그로만 기록합니다.
 
 ```bash
 cp .env.example .env
-RUST_LOG=info cargo run
+RUST_LOG=info cargo run --bin crypto-trader
 ```
 
 로그 레벨 조정:
 
 ```bash
-RUST_LOG=debug cargo run   # raw 메시지까지 출력
-RUST_LOG=warn cargo run    # 경고·오류만 출력
+RUST_LOG=debug cargo run --bin crypto-trader   # raw 메시지까지 출력
+RUST_LOG=warn cargo run --bin crypto-trader    # 경고·오류만 출력
 ```
 
 실행 시 출력 예시:
