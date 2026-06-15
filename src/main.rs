@@ -1,11 +1,10 @@
-mod config;
-mod execution;
-mod ingestion;
-mod metrics;
-mod orderbook;
-mod risk;
-mod strategy;
-mod types;
+use crypto_trader::config;
+use crypto_trader::execution;
+use crypto_trader::ingestion;
+use crypto_trader::orderbook;
+use crypto_trader::risk;
+use crypto_trader::strategy;
+use crypto_trader::types;
 
 use anyhow::Result;
 use crossbeam_channel::bounded;
@@ -44,7 +43,7 @@ async fn main() -> Result<()> {
         for event in &market_rx {
             match event {
                 types::MarketEvent::DepthUpdate(update) => {
-                    match book.apply_update(&update) {
+                    match book.handle_update(&update) {
                         Ok(true) => {
                             let snap = book.snapshot();
                             let mid = snap.bids.first().map(|(p, _)| *p).unwrap_or(0.0);
@@ -54,13 +53,16 @@ async fn main() -> Result<()> {
                             }
                         }
                         Ok(false) => {
-                            book.reset();
+                            // Buffering or sequence gap — no action needed
                         }
                         Err(e) => {
                             tracing::error!("Orderbook error: {}", e);
                             book.reset();
                         }
                     }
+                }
+                types::MarketEvent::DepthSnapshot(snapshot) => {
+                    book.handle_snapshot(&snapshot);
                 }
                 types::MarketEvent::Trade(trade) => {
                     tracing::debug!(price = %trade.price, qty = %trade.qty, "Trade");

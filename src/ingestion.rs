@@ -1,14 +1,52 @@
-use crate::types::{DepthUpdate, MarketEvent, Trade};
+use crate::types::{DepthSnapshot, DepthUpdate, MarketEvent, Trade};
 use anyhow::Result;
 use crossbeam_channel::Sender;
 use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
 use serde_json::Value;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
-pub async fn run_ingestion(ws_url: String, symbol: String, tx: Sender<MarketEvent>) -> Result<()> {
-    let stream = format!("{}/{}@depth@100ms/{}@aggTrade", ws_url, symbol.to_lowercase(), symbol.to_lowercase());
+#[derive(Debug, Deserialize)]
+struct SnapshotResponse {
+    #[serde(rename = "lastUpdateId")]
+    last_update_id: u64,
+    bids: Vec<[String; 2]>,
+    asks: Vec<[String; 2]>,
+}
+
+async fn fetch_snapshot(rest_url: &str, symbol: &str) -> Result<DepthSnapshot> {
+    let url = format!("{}/fapi/v1/depth?symbol={}&limit=1000", rest_url, symbol);
+    info!("Fetching depth snapshot: {}", url);
+    let resp = reqwest::get(&url).await?.json::<SnapshotResponse>().await?;
+    Ok(DepthSnapshot {
+        last_update_id: resp.last_update_id,
+        bids: resp.bids,
+        asks: resp.asks,
+    })
+}
+
+pub async fn run_ingestion(
+    ws_url: String,
+    symbol: String,
+    tx: Sender<MarketEvent>,
+) -> Result<()> {
+    run_ingestion_with_rest(ws_url, "https://fapi.binance.com".to_string(), symbol, tx).await
+}
+
+pub async fn run_ingestion_with_rest(
+    ws_url: String,
+    rest_url: String,
+    symbol: String,
+    tx: Sender<MarketEvent>,
+) -> Result<()> {
+    let stream = format!(
+        "{}/{}@depth@100ms/{}@aggTrade",
+        ws_url,
+        symbol.to_lowercase(),
+        symbol.to_lowercase()
+    );
     info!("Connecting to {}", stream);
 
     loop {
@@ -17,6 +55,24 @@ pub async fn run_ingestion(ws_url: String, symbol: String, tx: Sender<MarketEven
                 info!("WebSocket connected");
                 let (mut write, mut read) = ws_stream.split();
 
+                // Spawn task to fetch snapshot after WS connection established
+                let rest_url_clone = rest_url.clone();
+                let symbol_clone = symbol.clone();
+                let tx_snap = tx.clone();
+                tokio::spawn(async move {
+                    // Small delay to ensure some WS events are buffered first
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    match fetch_snapshot(&rest_url_clone, &symbol_clone).await {
+                        Ok(snap) => {
+                            info!("Snapshot fetched, lastUpdateId={}", snap.last_update_id);
+                            let _ = tx_snap.send(MarketEvent::DepthSnapshot(snap));
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch snapshot: {}", e);
+                        }
+                    }
+                });
+
                 while let Some(msg) = read.next().await {
                     match msg {
                         Ok(Message::Text(text)) => {
@@ -24,15 +80,20 @@ pub async fn run_ingestion(ws_url: String, symbol: String, tx: Sender<MarketEven
                             tracing::debug!("RAW: {}", raw);
 
                             if let Ok(v) = serde_json::from_str::<Value>(raw) {
-                                let event_type = v.get("e").and_then(|e| e.as_str()).unwrap_or("");
+                                let event_type =
+                                    v.get("e").and_then(|e| e.as_str()).unwrap_or("");
                                 match event_type {
                                     "depthUpdate" => {
-                                        if let Ok(update) = serde_json::from_value::<DepthUpdate>(v) {
+                                        if let Ok(update) =
+                                            serde_json::from_value::<DepthUpdate>(v)
+                                        {
                                             let _ = tx.send(MarketEvent::DepthUpdate(update));
                                         }
                                     }
                                     "aggTrade" => {
-                                        if let Ok(trade) = serde_json::from_value::<Trade>(v) {
+                                        if let Ok(trade) =
+                                            serde_json::from_value::<Trade>(v)
+                                        {
                                             let _ = tx.send(MarketEvent::Trade(trade));
                                         }
                                     }

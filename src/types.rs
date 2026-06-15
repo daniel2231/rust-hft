@@ -37,8 +37,16 @@ pub struct Trade {
 }
 
 #[derive(Debug, Clone)]
+pub struct DepthSnapshot {
+    pub last_update_id: u64,
+    pub bids: Vec<[String; 2]>,
+    pub asks: Vec<[String; 2]>,
+}
+
+#[derive(Debug, Clone)]
 pub enum MarketEvent {
     DepthUpdate(DepthUpdate),
+    DepthSnapshot(DepthSnapshot),
     Trade(Trade),
     Reconnect,
 }

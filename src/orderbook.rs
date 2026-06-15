@@ -1,14 +1,19 @@
-use crate::types::{DepthUpdate, OrderbookSnapshot};
+use crate::types::{DepthSnapshot, DepthUpdate, OrderbookSnapshot};
 use anyhow::Result;
 use std::collections::BTreeMap;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
+
+enum SyncState {
+    Buffering(Vec<DepthUpdate>),
+    Live { last_update_id: u64 },
+}
 
 pub struct Orderbook {
     symbol: String,
     bids: BTreeMap<u64, f64>,
     asks: BTreeMap<u64, f64>,
-    last_update_id: u64,
     depth_levels: usize,
+    state: SyncState,
 }
 
 fn price_to_key(price: f64) -> u64 {
@@ -21,60 +26,27 @@ impl Orderbook {
             symbol,
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
-            last_update_id: 0,
             depth_levels,
+            state: SyncState::Buffering(Vec::new()),
         }
     }
 
     pub fn reset(&mut self) {
         self.bids.clear();
         self.asks.clear();
-        self.last_update_id = 0;
-        info!(symbol = %self.symbol, "Orderbook reset");
+        self.state = SyncState::Buffering(Vec::new());
+        info!(symbol = %self.symbol, "Orderbook reset to Buffering");
     }
 
-    pub fn apply_snapshot(&mut self, snapshot_last_id: u64, bids: &[[String; 2]], asks: &[[String; 2]]) {
-        self.reset();
-        self.last_update_id = snapshot_last_id;
-        for level in bids {
-            let price: f64 = level[0].parse().unwrap_or(0.0);
-            let qty: f64 = level[1].parse().unwrap_or(0.0);
-            if qty > 0.0 {
-                self.bids.insert(price_to_key(price), qty);
-            }
-        }
-        for level in asks {
-            let price: f64 = level[0].parse().unwrap_or(0.0);
-            let qty: f64 = level[1].parse().unwrap_or(0.0);
-            if qty > 0.0 {
-                self.asks.insert(price_to_key(price), qty);
-            }
-        }
-        info!(symbol = %self.symbol, last_update_id = snapshot_last_id, "Snapshot applied");
-    }
-
-    pub fn apply_update(&mut self, update: &DepthUpdate) -> Result<bool> {
-        if self.last_update_id == 0 {
-            return Ok(false);
-        }
-
-        if update.prev_last_update_id != self.last_update_id {
-            warn!(
-                expected = self.last_update_id,
-                got = update.prev_last_update_id,
-                "Sequence gap detected, reset required"
-            );
-            return Ok(false);
-        }
-
+    fn apply_levels(bids: &mut BTreeMap<u64, f64>, asks: &mut BTreeMap<u64, f64>, update: &DepthUpdate) {
         for level in &update.bids {
             let price: f64 = level[0].parse().unwrap_or(0.0);
             let qty: f64 = level[1].parse().unwrap_or(0.0);
             let key = price_to_key(price);
             if qty == 0.0 {
-                self.bids.remove(&key);
+                bids.remove(&key);
             } else {
-                self.bids.insert(key, qty);
+                bids.insert(key, qty);
             }
         }
         for level in &update.asks {
@@ -82,13 +54,110 @@ impl Orderbook {
             let qty: f64 = level[1].parse().unwrap_or(0.0);
             let key = price_to_key(price);
             if qty == 0.0 {
-                self.asks.remove(&key);
+                asks.remove(&key);
             } else {
-                self.asks.insert(key, qty);
+                asks.insert(key, qty);
             }
         }
-        self.last_update_id = update.last_update_id;
-        Ok(true)
+    }
+
+    /// Returns true if the orderbook is live (synced), false if still buffering.
+    pub fn handle_snapshot(&mut self, snapshot: &DepthSnapshot) -> bool {
+        let s = snapshot.last_update_id;
+
+        let buffered = match &self.state {
+            SyncState::Buffering(buf) => buf.clone(),
+            SyncState::Live { .. } => {
+                // Re-sync: treat as fresh buffering with empty buffer
+                Vec::new()
+            }
+        };
+
+        // Find first event where event.U <= S+1 AND event.u >= S+1
+        let first_valid = buffered.iter().position(|e| {
+            e.first_update_id <= s + 1 && e.last_update_id >= s + 1
+        });
+
+        // Apply snapshot to BTreeMap
+        self.bids.clear();
+        self.asks.clear();
+        for level in &snapshot.bids {
+            let price: f64 = level[0].parse().unwrap_or(0.0);
+            let qty: f64 = level[1].parse().unwrap_or(0.0);
+            if qty > 0.0 {
+                self.bids.insert(price_to_key(price), qty);
+            }
+        }
+        for level in &snapshot.asks {
+            let price: f64 = level[0].parse().unwrap_or(0.0);
+            let qty: f64 = level[1].parse().unwrap_or(0.0);
+            if qty > 0.0 {
+                self.asks.insert(price_to_key(price), qty);
+            }
+        }
+
+        info!(symbol = %self.symbol, last_update_id = s, "Snapshot applied");
+
+        let valid_events: Vec<DepthUpdate> = match first_valid {
+            Some(idx) => buffered[idx..].to_vec(),
+            None => {
+                // No valid buffered event — go live from snapshot id
+                self.state = SyncState::Live { last_update_id: s };
+                info!(symbol = %self.symbol, "Live (no buffered events to apply)");
+                return true;
+            }
+        };
+
+        let mut last_id = s;
+        for event in &valid_events {
+            // Verify sequence
+            if event.prev_last_update_id != last_id {
+                warn!(
+                    expected = last_id,
+                    got = event.prev_last_update_id,
+                    "Sequence gap in buffered events during snapshot apply — stopping"
+                );
+                break;
+            }
+            Self::apply_levels(&mut self.bids, &mut self.asks, event);
+            last_id = event.last_update_id;
+        }
+
+        self.state = SyncState::Live { last_update_id: last_id };
+        info!(symbol = %self.symbol, last_update_id = last_id, "Orderbook Live");
+        true
+    }
+
+    /// Returns true if update was applied, false if sequence gap (caller should reset).
+    pub fn handle_update(&mut self, update: &DepthUpdate) -> Result<bool> {
+        match &self.state {
+            SyncState::Buffering(buf) => {
+                let mut buf = buf.clone();
+                buf.push(update.clone());
+                self.state = SyncState::Buffering(buf);
+                Ok(false)
+            }
+            SyncState::Live { last_update_id } => {
+                let expected = *last_update_id;
+                if update.prev_last_update_id != expected {
+                    error!(
+                        expected,
+                        got = update.prev_last_update_id,
+                        "Sequence gap detected — resetting to Buffering"
+                    );
+                    self.reset();
+                    return Ok(false);
+                }
+                Self::apply_levels(&mut self.bids, &mut self.asks, update);
+                self.state = SyncState::Live { last_update_id: update.last_update_id };
+                Ok(true)
+            }
+        }
+    }
+
+    /// Legacy method kept for compatibility — delegates to handle_update.
+    pub fn apply_update(&mut self, update: &DepthUpdate) -> Result<bool> {
+        self.handle_update(update)
     }
 
     pub fn snapshot(&self) -> OrderbookSnapshot {
@@ -113,5 +182,9 @@ impl Orderbook {
             asks,
             timestamp_ms: now,
         }
+    }
+
+    pub fn is_live(&self) -> bool {
+        matches!(self.state, SyncState::Live { .. })
     }
 }
