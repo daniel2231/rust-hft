@@ -1,4 +1,5 @@
 use crypto_trader::config;
+use crypto_trader::dashboard;
 use crypto_trader::execution;
 use crypto_trader::ingestion;
 use crypto_trader::orderbook;
@@ -31,9 +32,13 @@ async fn main() -> Result<()> {
 
     let resync_needed = Arc::new(AtomicBool::new(false));
 
+    // Shared dashboard state
+    let dash_state = dashboard::SharedState::new();
+
     let cfg_thread = cfg.clone();
     let order_tx_thread = order_tx.clone();
     let resync_thread = Arc::clone(&resync_needed);
+    let dash_state_ob = Arc::clone(&dash_state);
     std::thread::spawn(move || {
         let mut book = orderbook::Orderbook::new(
             cfg_thread.symbol.clone(),
@@ -58,20 +63,31 @@ async fn main() -> Result<()> {
                 types::MarketEvent::DepthUpdate(update) => {
                     match book.handle_update(&update, &resync_thread) {
                         Ok(true) => {
-                            let snap = book.snapshot();
-                            let mid = snap.bids.first().map(|(p, _)| *p).unwrap_or(0.0);
-                            let signal = strat.on_orderbook(&snap);
+                            // Update shared dashboard state
+                            dash_state_ob.event_count.fetch_add(1, Ordering::Relaxed);
+                            dash_state_ob.is_live.store(book.is_live(), Ordering::Relaxed);
+                            dash_state_ob.connected.store(true, Ordering::Relaxed);
+                            if book.is_live() {
+                                let snap = book.snapshot();
+                                if let Some((price, _)) = snap.bids.first() {
+                                    dash_state_ob.update_price_history(*price);
+                                }
+                                *dash_state_ob.snapshot.write() = Some(snap.clone());
 
-                            // Only call risk.check() for non-Hold signals
-                            match &signal {
-                                types::Signal::Hold => {}
-                                _ => {
-                                    match risk.check(&signal, mid) {
-                                        Ok(order) => {
-                                            let _ = order_tx_thread.send(order);
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!("Risk check rejected order: {}", e);
+                                let mid = snap.bids.first().map(|(p, _)| *p).unwrap_or(0.0);
+                                let signal = strat.on_orderbook(&snap);
+
+                                // Only call risk.check() for non-Hold signals
+                                match &signal {
+                                    types::Signal::Hold => {}
+                                    _ => {
+                                        match risk.check(&signal, mid) {
+                                            Ok(order) => {
+                                                let _ = order_tx_thread.send(order);
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("Risk check rejected order: {}", e);
+                                            }
                                         }
                                     }
                                 }
@@ -79,6 +95,7 @@ async fn main() -> Result<()> {
 
                             // Every 1000 events, log stats
                             if event_count % 1000 == 0 {
+                                let snap = book.snapshot();
                                 let best_bid = snap.bids.first().map(|(p, q)| (*p, *q));
                                 let best_ask = snap.asks.first().map(|(p, q)| (*p, *q));
                                 info!(
@@ -91,7 +108,10 @@ async fn main() -> Result<()> {
                             }
                         }
                         Ok(false) => {
-                            // Buffering or sequence gap — no action needed
+                            // Buffering or sequence gap — update connected state
+                            dash_state_ob.event_count.fetch_add(1, Ordering::Relaxed);
+                            dash_state_ob.connected.store(true, Ordering::Relaxed);
+                            dash_state_ob.is_live.store(false, Ordering::Relaxed);
                         }
                         Err(e) => {
                             tracing::error!("Orderbook error: {}", e);
@@ -107,16 +127,19 @@ async fn main() -> Result<()> {
                 }
                 types::MarketEvent::Reconnect => {
                     book.reset();
+                    dash_state_ob.connected.store(false, Ordering::Relaxed);
+                    dash_state_ob.is_live.store(false, Ordering::Relaxed);
                 }
             }
         }
     });
 
     let executor = Arc::new(execution::PaperExecutor::new(cfg.symbol.clone()));
+    let dash_state_exec = Arc::clone(&dash_state);
     tokio::spawn(async move {
         let mut order_count: u64 = 0;
         for order in &order_rx {
-            executor.execute(&order);
+            executor.execute_with_state(&order, &dash_state_exec);
             order_count += 1;
             if order_count % 100 == 0 {
                 executor.log_stats();
@@ -126,6 +149,15 @@ async fn main() -> Result<()> {
 
     let wd = Arc::new(watchdog::Watchdog::new());
     wd.run(cfg.watchdog.timeout_secs, market_tx.clone());
+
+    // Spawn dashboard server
+    if cfg.dashboard.enabled {
+        let dash_state_server = Arc::clone(&dash_state);
+        let port = cfg.dashboard.port;
+        tokio::spawn(async move {
+            dashboard::server::run_dashboard(dash_state_server, port).await;
+        });
+    }
 
     let cancel = CancellationToken::new();
 

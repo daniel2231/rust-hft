@@ -3,6 +3,7 @@ use chrono::Utc;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tracing::{error, info};
 
 pub struct PaperExecutor {
@@ -75,6 +76,36 @@ impl PaperExecutor {
         } else {
             error!("Failed to write to paper log");
         }
+    }
+
+    pub fn execute_with_state(&self, order: &ValidatedOrder, state: &Arc<crate::dashboard::SharedState>) {
+        self.execute(order);
+
+        let (side, price, qty) = match &order.signal {
+            Signal::Buy { price, qty } => ("BUY", *price, *qty),
+            Signal::Sell { price, qty } => ("SELL", *price, *qty),
+            Signal::Hold => return,
+        };
+
+        let trade = crate::dashboard::PaperTrade {
+            timestamp: Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            side: side.to_string(),
+            price,
+            qty,
+            client_id: order.client_order_id.clone(),
+        };
+
+        match &order.signal {
+            Signal::Buy { .. } => {
+                state.buy_count.fetch_add(1, Ordering::Relaxed);
+            }
+            Signal::Sell { .. } => {
+                state.sell_count.fetch_add(1, Ordering::Relaxed);
+            }
+            Signal::Hold => {}
+        }
+
+        state.add_trade(trade);
     }
 
     pub fn log_stats(&self) {

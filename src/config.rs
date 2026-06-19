@@ -10,6 +10,13 @@ pub struct Config {
     pub orderbook: OrderbookConfig,
     pub exchange: ExchangeConfig,
     pub watchdog: WatchdogConfig,
+    pub dashboard: DashboardConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct DashboardConfig {
+    pub port: u16,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]

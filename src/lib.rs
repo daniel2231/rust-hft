@@ -1,4 +1,5 @@
 pub mod backtest;
+pub mod dashboard;
 pub mod config;
 pub mod execution;
 pub mod ingestion;

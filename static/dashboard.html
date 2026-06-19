@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>crypto-trader dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1117; color: #e6edf3; font-family: 'Segoe UI', sans-serif; font-size: 14px; }
+  .topbar { background: #161b22; padding: 12px 24px; display: flex; align-items: center; gap: 24px; border-bottom: 1px solid #30363d; }
+  .topbar h1 { font-size: 16px; color: #58a6ff; font-weight: 600; }
+  .badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-live { background: #1a4731; color: #3fb950; }
+  .badge-buffering { background: #3d2f00; color: #d29922; }
+  .badge-disconnected { background: #3d1f1f; color: #f85149; }
+  .topbar-price { font-size: 22px; font-weight: 700; color: #f0f6fc; }
+  .topbar-meta { color: #8b949e; font-size: 12px; }
+  .container { padding: 16px 24px; display: flex; flex-direction: column; gap: 16px; }
+  .row { display: grid; gap: 16px; }
+  .row-3 { grid-template-columns: repeat(3, 1fr); }
+  .row-2 { grid-template-columns: 1fr 1fr; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+  .card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin-bottom: 12px; }
+  .big-number { font-size: 32px; font-weight: 700; color: #f0f6fc; }
+  .sub-text { font-size: 12px; color: #8b949e; margin-top: 4px; }
+  .kill-btn { width: 100%; padding: 14px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .kill-btn-halt { background: #da3633; color: white; }
+  .kill-btn-halt:hover { background: #b91c1c; }
+  .kill-btn-resume { background: #238636; color: white; }
+  .kill-btn-resume:hover { background: #1a6329; }
+  .kill-status { font-size: 12px; color: #8b949e; margin-top: 8px; text-align: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { color: #8b949e; font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #30363d; text-align: left; }
+  td { padding: 6px 8px; border-bottom: 1px solid #21262d; }
+  .side-buy { background: #1a4731; color: #3fb950; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+  .side-sell { background: #3d1f1f; color: #f85149; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+  .chart-wrap { position: relative; height: 220px; }
+  .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #21262d; }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: #8b949e; }
+  .stat-value { font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot-live { background: #3fb950; }
+  .dot-buffering { background: #d29922; }
+  .dot-disconnected { background: #f85149; }
+  .ob-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-size: 12px; }
+  .ob-price { width: 90px; text-align: right; }
+  .ob-qty { width: 60px; color: #8b949e; }
+  .ob-bar-wrap { flex: 1; height: 14px; background: #21262d; border-radius: 2px; overflow: hidden; }
+  .ob-bar-bid { height: 100%; background: #1a4731; border-radius: 2px; }
+  .ob-bar-ask { height: 100%; background: #3d1f1f; border-radius: 2px; }
+  .ob-section-title { font-size: 11px; color: #8b949e; margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 1px; }
+  #no-data { text-align: center; color: #8b949e; padding: 40px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>crypto-trader</h1>
+  <span id="sync-badge" class="badge badge-disconnected">Disconnected</span>
+  <span id="topbar-price" class="topbar-price">—</span>
+  <span id="topbar-spread" class="topbar-meta">spread: —</span>
+  <span style="margin-left:auto" id="topbar-eps" class="topbar-meta">— events/sec</span>
+</div>
+
+<div class="container">
+  <!-- Row 1: Status cards -->
+  <div class="row row-3">
+    <div class="card">
+      <div class="card-title">연결 상태</div>
+      <div id="conn-status" style="display:flex;align-items:center;font-size:16px;font-weight:600">
+        <span class="dot dot-disconnected" id="conn-dot"></span>
+        <span id="conn-text">Disconnected</span>
+      </div>
+      <div class="sub-text" id="conn-sub">대시보드 서버에 연결 중...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">총 이벤트 수</div>
+      <div class="big-number" id="event-count">0</div>
+      <div class="sub-text" id="event-sub">초당 0개</div>
+    </div>
+    <div class="card">
+      <div class="card-title">킬 스위치</div>
+      <button class="kill-btn kill-btn-halt" id="kill-btn" onclick="toggleHalt()">🛑 전체 주문 차단</button>
+      <div class="kill-status" id="kill-status">현재 상태: 정상 가동 중</div>
+    </div>
+  </div>
+
+  <!-- Row 2: Charts -->
+  <div class="row row-2">
+    <div class="card">
+      <div class="card-title">BTC 가격 (최근 5분)</div>
+      <div class="chart-wrap">
+        <canvas id="priceChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">오더북 (상위 10호가)</div>
+      <div id="orderbook-view">
+        <div id="no-data">데이터 대기 중...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Trades -->
+  <div class="row row-2">
+    <div class="card">
+      <div class="card-title">Paper 거래 내역 (최근 50건)</div>
+      <div style="max-height:260px;overflow-y:auto">
+        <table>
+          <thead><tr><th>시각</th><th>방향</th><th>가격</th><th>수량</th></tr></thead>
+          <tbody id="trades-tbody">
+            <tr><td colspan="4" style="color:#8b949e;text-align:center;padding:20px">아직 거래 없음 (NoOpStrategy)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">거래 통계</div>
+      <div class="stat-row"><span class="stat-label">총 매수</span><span class="stat-value" id="stat-buy">0건</span></div>
+      <div class="stat-row"><span class="stat-label">총 매도</span><span class="stat-value" id="stat-sell">0건</span></div>
+      <div class="stat-row"><span class="stat-label">Best Bid</span><span class="stat-value" id="stat-bid">—</span></div>
+      <div class="stat-row"><span class="stat-label">Best Ask</span><span class="stat-value" id="stat-ask">—</span></div>
+      <div class="stat-row"><span class="stat-label">스프레드</span><span class="stat-value" id="stat-spread">—</span></div>
+      <div class="stat-row"><span class="stat-label">오더북 상태</span><span class="stat-value" id="stat-sync">—</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let ws = null;
+let halted = false;
+
+// Price chart
+const ctx = document.getElementById('priceChart').getContext('2d');
+const priceChart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      data: [],
+      borderColor: '#58a6ff',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      fill: false,
+      tension: 0.1,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: {
+        grid: { color: '#21262d' },
+        ticks: { color: '#8b949e', font: { size: 11 } }
+      }
+    },
+    animation: false,
+  }
+});
+
+function connect() {
+  ws = new WebSocket('ws://' + location.hostname + ':3000/ws');
+  ws.onopen = () => {
+    document.getElementById('conn-sub').textContent = '대시보드 서버 연결됨';
+  };
+  ws.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    update(d);
+  };
+  ws.onclose = () => {
+    setDisconnected();
+    setTimeout(connect, 3000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function setDisconnected() {
+  document.getElementById('sync-badge').className = 'badge badge-disconnected';
+  document.getElementById('sync-badge').textContent = 'Disconnected';
+  document.getElementById('conn-dot').className = 'dot dot-disconnected';
+  document.getElementById('conn-text').textContent = 'Disconnected';
+  document.getElementById('conn-sub').textContent = '재연결 중...';
+}
+
+function update(d) {
+  // Topbar
+  const price = d.best_bid ? d.best_bid.toFixed(2) : '—';
+  document.getElementById('topbar-price').textContent = price ? '$' + price : '—';
+  document.getElementById('topbar-spread').textContent = d.spread ? 'spread: $' + d.spread.toFixed(2) : 'spread: —';
+  document.getElementById('topbar-eps').textContent = d.events_per_sec.toFixed(1) + ' events/sec';
+
+  // Sync badge
+  const badge = document.getElementById('sync-badge');
+  if (!d.connected) {
+    badge.className = 'badge badge-disconnected'; badge.textContent = 'Disconnected';
+  } else if (d.sync_state === 'Live') {
+    badge.className = 'badge badge-live'; badge.textContent = '● Live';
+  } else {
+    badge.className = 'badge badge-buffering'; badge.textContent = '● Buffering';
+  }
+
+  // Connection card
+  const dot = document.getElementById('conn-dot');
+  const connText = document.getElementById('conn-text');
+  if (d.sync_state === 'Live') {
+    dot.className = 'dot dot-live'; connText.textContent = 'Live';
+    document.getElementById('conn-sub').textContent = '실시간 동기화 중';
+  } else {
+    dot.className = 'dot dot-buffering'; connText.textContent = 'Buffering';
+    document.getElementById('conn-sub').textContent = '스냅샷 동기화 중...';
+  }
+
+  // Events
+  document.getElementById('event-count').textContent = d.event_count.toLocaleString();
+  document.getElementById('event-sub').textContent = '초당 ' + d.events_per_sec.toFixed(1) + '개';
+
+  // Kill switch
+  halted = d.halted;
+  const btn = document.getElementById('kill-btn');
+  const killStatus = document.getElementById('kill-status');
+  if (halted) {
+    btn.className = 'kill-btn kill-btn-resume'; btn.textContent = '▶ 주문 재개';
+    killStatus.textContent = '현재 상태: ⛔ 주문 차단 중';
+    killStatus.style.color = '#f85149';
+  } else {
+    btn.className = 'kill-btn kill-btn-halt'; btn.textContent = '🛑 전체 주문 차단';
+    killStatus.textContent = '현재 상태: ✅ 정상 가동 중';
+    killStatus.style.color = '#3fb950';
+  }
+
+  // Price chart
+  if (d.price_history && d.price_history.length > 0) {
+    priceChart.data.labels = d.price_history.map((_, i) => i);
+    priceChart.data.datasets[0].data = d.price_history;
+    priceChart.update('none');
+  }
+
+  // Orderbook
+  const obView = document.getElementById('orderbook-view');
+  if (d.asks.length > 0 || d.bids.length > 0) {
+    const maxQty = Math.max(...d.bids.map(b => b[1]), ...d.asks.map(a => a[1]), 0.001);
+    let html = '<div class="ob-section-title" style="color:#f85149">매도 (Ask)</div>';
+    const asksReversed = [...d.asks].reverse();
+    for (const [price, qty] of asksReversed) {
+      const pct = (qty / maxQty * 100).toFixed(1);
+      html += `<div class="ob-row"><span class="ob-price" style="color:#f85149">${price.toFixed(1)}</span><div class="ob-bar-wrap"><div class="ob-bar-ask" style="width:${pct}%"></div></div><span class="ob-qty">${qty.toFixed(3)}</span></div>`;
+    }
+    html += '<div class="ob-section-title" style="color:#3fb950;margin-top:8px">매수 (Bid)</div>';
+    for (const [price, qty] of d.bids) {
+      const pct = (qty / maxQty * 100).toFixed(1);
+      html += `<div class="ob-row"><span class="ob-price" style="color:#3fb950">${price.toFixed(1)}</span><div class="ob-bar-wrap"><div class="ob-bar-bid" style="width:${pct}%"></div></div><span class="ob-qty">${qty.toFixed(3)}</span></div>`;
+    }
+    obView.innerHTML = html;
+  }
+
+  // Trades
+  if (d.recent_trades && d.recent_trades.length > 0) {
+    const rows = [...d.recent_trades].reverse().map(t => {
+      const time = t.timestamp.split('T')[1]?.split('.')[0] || t.timestamp;
+      const badge = t.side === 'BUY'
+        ? `<span class="side-buy">BUY</span>`
+        : `<span class="side-sell">SELL</span>`;
+      return `<tr><td>${time}</td><td>${badge}</td><td>$${t.price.toFixed(2)}</td><td>${t.qty.toFixed(4)}</td></tr>`;
+    }).join('');
+    document.getElementById('trades-tbody').innerHTML = rows;
+  }
+
+  // Stats
+  document.getElementById('stat-buy').textContent = d.buy_count + '건';
+  document.getElementById('stat-sell').textContent = d.sell_count + '건';
+  document.getElementById('stat-bid').textContent = d.best_bid ? '$' + d.best_bid.toFixed(2) : '—';
+  document.getElementById('stat-ask').textContent = d.best_ask ? '$' + d.best_ask.toFixed(2) : '—';
+  document.getElementById('stat-spread').textContent = d.spread ? '$' + d.spread.toFixed(2) : '—';
+  document.getElementById('stat-sync').textContent = d.sync_state;
+}
+
+function toggleHalt() {
+  const endpoint = halted ? '/resume' : '/halt';
+  fetch(endpoint).catch(() => {});
+}
+
+connect();
+</script>
+</body>
+</html>

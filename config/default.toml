@@ -16,3 +16,7 @@ rest_url = "https://fapi.binance.com"
 
 [watchdog]
 timeout_secs = 30
+
+[dashboard]
+port = 3000
+enabled = true
