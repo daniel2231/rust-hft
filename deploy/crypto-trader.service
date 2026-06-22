@@ -1,0 +1,51 @@
+[Unit]
+Description=crypto-trader - low-latency crypto algorithmic trading system
+Documentation=https://github.com/kangdongheon/rust-hft
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=crypto
+Group=crypto
+
+# Working directory must contain config/ and is where the HALT kill-switch
+# file and logs/ are created/looked up at runtime.
+WorkingDirectory=/opt/crypto-trader
+
+# Binance API credentials (live mode). Keep this file 0600, owned by the
+# service user. Paper mode runs fine even if it only contains placeholders.
+EnvironmentFile=/opt/crypto-trader/.env
+Environment=RUST_LOG=info
+
+ExecStart=/opt/crypto-trader/crypto-trader
+
+# Auto-restart on any crash/exit. This is what keeps it running 24/7.
+Restart=always
+RestartSec=5s
+
+# Give the process time to flush state and finish a graceful (Ctrl+C style)
+# shutdown. SIGINT mirrors the interactive shutdown path used in dev.
+KillSignal=SIGINT
+TimeoutStopSec=30s
+
+# Logs go to journald (view with: journalctl -u crypto-trader -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-trader
+
+# --- Hardening ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Allow writing only to the app's own dir (logs/, HALT file).
+ReadWritePaths=/opt/crypto-trader
+
+[Install]
+WantedBy=multi-user.target

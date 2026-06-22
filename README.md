@@ -238,6 +238,50 @@ pub trait Strategy: Send {
 
 ---
 
+## 서버 배포 (24/7 운영)
+
+리눅스 서버에서 죽지 않고 24시간 돌리려면 **systemd 서비스**로 등록하는 것이 가장 안정적입니다. 크래시 시 자동 재시작, 부팅 시 자동 시작, journald 로깅을 제공합니다.
+
+### 자동 설치
+
+레포 루트에서 (서버에서 root로 실행):
+
+```bash
+sudo deploy/install.sh
+```
+
+이 스크립트는 다음을 수행합니다:
+
+1. `cargo build --release`로 바이너리 빌드
+2. 전용 시스템 유저 `crypto` 생성
+3. `/opt/crypto-trader`에 바이너리·`config/`·`.env` 설치 (`.env`는 `0600`)
+4. systemd 유닛 등록 및 부팅 시 자동 시작 활성화
+
+### 시작 / 상태 / 로그
+
+```bash
+sudo systemctl start crypto-trader      # 시작
+sudo systemctl status crypto-trader     # 상태 확인
+journalctl -u crypto-trader -f          # 실시간 로그
+sudo systemctl restart crypto-trader    # 재시작
+sudo systemctl stop crypto-trader       # 중단 (SIGINT → 그레이스풀 셧다운)
+```
+
+### 라이브 모드 자격증명
+
+라이브 거래 시 `/opt/crypto-trader/.env`에 실제 API 키를 입력합니다:
+
+```bash
+sudo nano /opt/crypto-trader/.env       # BINANCE_API_KEY / BINANCE_API_SECRET
+sudo systemctl restart crypto-trader
+```
+
+> 킬 스위치는 서버에서도 동작합니다: `sudo touch /opt/crypto-trader/HALT`
+
+유닛 파일: [`deploy/crypto-trader.service`](deploy/crypto-trader.service) — 로그 레벨, 재시작 정책, 하드닝 옵션은 여기서 조정합니다.
+
+---
+
 ## Phase Roadmap
 
 | Phase | 환경 | RTT | 목적 |
