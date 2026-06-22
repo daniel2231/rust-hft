@@ -9,7 +9,13 @@ SERVICE_USER=crypto
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "==> Building release binary"
-cargo build --release --bin crypto-trader
+# sudo strips PATH, so locate cargo explicitly.
+CARGO="${CARGO:-$(command -v cargo 2>/dev/null || echo "${SUDO_USER:+$(eval echo ~$SUDO_USER)}/.cargo/bin/cargo")}"
+if [[ ! -x "$CARGO" ]]; then
+  echo "ERROR: cargo not found. Run: curl https://sh.rustup.rs -sSf | sh"
+  exit 1
+fi
+"$CARGO" build --release --bin crypto-trader
 
 echo "==> Creating service user '$SERVICE_USER' (if missing)"
 id -u "$SERVICE_USER" &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
