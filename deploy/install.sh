@@ -9,13 +9,14 @@ SERVICE_USER=crypto
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "==> Building release binary"
-# sudo strips PATH, so locate cargo explicitly.
-CARGO="${CARGO:-$(command -v cargo 2>/dev/null || echo "${SUDO_USER:+$(eval echo ~$SUDO_USER)}/.cargo/bin/cargo")}"
-if [[ ! -x "$CARGO" ]]; then
-  echo "ERROR: cargo not found. Run: curl https://sh.rustup.rs -sSf | sh"
-  exit 1
+# Build as the invoking user, not root: rustup keeps its toolchain config
+# per-user (~/.rustup), so running cargo under sudo would use root's empty
+# config and fail with "could not choose a version of cargo".
+if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+  sudo -u "$SUDO_USER" -H bash -lc "cd '$REPO_DIR' && cargo build --release --bin crypto-trader"
+else
+  cargo build --release --bin crypto-trader
 fi
-"$CARGO" build --release --bin crypto-trader
 
 echo "==> Creating service user '$SERVICE_USER' (if missing)"
 id -u "$SERVICE_USER" &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
