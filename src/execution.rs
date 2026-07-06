@@ -1,30 +1,38 @@
 use crate::types::{Signal, ValidatedOrder};
 use chrono::Utc;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{error, info};
 
 pub struct PaperExecutor {
     symbol: String,
-    log_path: String,
+    /// Opened once at startup and held for the process lifetime, so each
+    /// order costs one write syscall instead of open+write+close.
+    log_file: Mutex<Option<File>>,
     buy_count: AtomicU64,
     sell_count: AtomicU64,
-    buy_volume: std::sync::Mutex<f64>,
-    sell_volume: std::sync::Mutex<f64>,
+    buy_volume: Mutex<f64>,
+    sell_volume: Mutex<f64>,
 }
 
 impl PaperExecutor {
     pub fn new(symbol: String) -> Self {
         std::fs::create_dir_all("logs").ok();
+        let log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("logs/orders_paper.log")
+            .map_err(|e| error!("Failed to open paper log: {}", e))
+            .ok();
         Self {
             symbol,
-            log_path: "logs/orders_paper.log".to_string(),
+            log_file: Mutex::new(log_file),
             buy_count: AtomicU64::new(0),
             sell_count: AtomicU64::new(0),
-            buy_volume: std::sync::Mutex::new(0.0),
-            sell_volume: std::sync::Mutex::new(0.0),
+            buy_volume: Mutex::new(0.0),
+            sell_volume: Mutex::new(0.0),
         }
     }
 
@@ -71,10 +79,16 @@ impl PaperExecutor {
 
         info!("{}", line.trim());
 
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&self.log_path) {
-            let _ = file.write_all(line.as_bytes());
-        } else {
-            error!("Failed to write to paper log");
+        match self.log_file.lock() {
+            Ok(mut guard) => match guard.as_mut() {
+                Some(file) => {
+                    if let Err(e) = file.write_all(line.as_bytes()) {
+                        error!("Failed to write to paper log: {}", e);
+                    }
+                }
+                None => error!("Paper log unavailable — order not persisted"),
+            },
+            Err(_) => error!("Paper log mutex poisoned — order not persisted"),
         }
     }
 
