@@ -23,13 +23,17 @@ pub async fn run_dashboard(state: Arc<SharedState>, port: u16) {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn halt_handler() -> impl IntoResponse {
+async fn halt_handler(State(state): State<Arc<SharedState>>) -> impl IntoResponse {
     std::fs::write("HALT", "").ok();
+    // Set the flag directly so the risk checker reacts immediately,
+    // without waiting for the next file-poll tick.
+    state.halt_flag.store(true, std::sync::atomic::Ordering::Relaxed);
     "OK"
 }
 
-async fn resume_handler() -> impl IntoResponse {
+async fn resume_handler(State(state): State<Arc<SharedState>>) -> impl IntoResponse {
     std::fs::remove_file("HALT").ok();
+    state.halt_flag.store(false, std::sync::atomic::Ordering::Relaxed);
     "OK"
 }
 

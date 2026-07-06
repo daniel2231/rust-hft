@@ -19,10 +19,11 @@ The hot path is: WebSocket message → `ingestion` → `orderbook` update → `s
   be introduced inside `orderbook.rs` update logic or `strategy::on_orderbook`.
 - **Minimize IO on the critical path.** No blocking disk/network IO inside orderbook update,
   strategy evaluation, or risk checks. Logging is fine (async, buffered via `tracing`), but avoid
-  synchronous file writes or extra REST calls per event. The paper-trading order log
-  (`logs/orders_paper.log`) and dashboard `HALT` file check
-  (`src/dashboard/mod.rs::to_dashboard_state`) are borderline — keep them cheap (single small
-  writes / `Path::exists()`), don't make them heavier without reconsidering placement.
+  synchronous file writes or extra REST calls per event. Existing patterns to preserve: the
+  kill-switch `HALT` file is polled by a background task in `main.rs` that updates a shared
+  `AtomicBool` — risk checks and the dashboard read the atomic, never the filesystem; the
+  paper-trading order log holds one file handle for the process lifetime (one `write` syscall
+  per order, no open/close). Don't regress either back to per-event filesystem calls.
 - Prefer bounded, pre-sized collections (`VecDeque::with_capacity`, fixed depth in
   `orderbook::depth_levels`) over unbounded growth.
 

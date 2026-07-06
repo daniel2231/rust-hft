@@ -32,13 +32,28 @@ async fn main() -> Result<()> {
 
     let resync_needed = Arc::new(AtomicBool::new(false));
 
+    // Kill-switch flag: a background task polls the HALT file so the hot path
+    // (risk checks) reads an atomic instead of doing a filesystem stat per order.
+    let halt_flag = Arc::new(AtomicBool::new(std::path::Path::new("HALT").exists()));
+    {
+        let flag = Arc::clone(&halt_flag);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
+            loop {
+                tick.tick().await;
+                flag.store(std::path::Path::new("HALT").exists(), Ordering::Relaxed);
+            }
+        });
+    }
+
     // Shared dashboard state
-    let dash_state = dashboard::SharedState::new();
+    let dash_state = dashboard::SharedState::new(Arc::clone(&halt_flag));
 
     let cfg_thread = cfg.clone();
     let order_tx_thread = order_tx.clone();
     let resync_thread = Arc::clone(&resync_needed);
     let dash_state_ob = Arc::clone(&dash_state);
+    let halt_flag_risk = Arc::clone(&halt_flag);
     std::thread::spawn(move || {
         let mut book = orderbook::Orderbook::new(
             cfg_thread.symbol.clone(),
@@ -50,7 +65,8 @@ async fn main() -> Result<()> {
             cfg_thread.risk.min_free_balance_usdt,
             cfg_thread.risk.price_band_pct,
             cfg_thread.risk.max_orders_per_sec,
-        );
+        )
+        .with_halt_flag(halt_flag_risk);
         let mut event_count: u64 = 0;
 
         for event in &market_rx {
@@ -72,7 +88,6 @@ async fn main() -> Result<()> {
                                 if let Some((price, _)) = snap.bids.first() {
                                     dash_state_ob.update_price_history(*price);
                                 }
-                                *dash_state_ob.snapshot.write() = Some(snap.clone());
 
                                 let mid = snap.bids.first().map(|(p, _)| *p).unwrap_or(0.0);
                                 let signal = strat.on_orderbook(&snap);
@@ -91,6 +106,10 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                 }
+
+                                // Strategy/risk are done with the snapshot — move it
+                                // into the dashboard slot instead of cloning it.
+                                *dash_state_ob.snapshot.write() = Some(snap);
                             }
 
                             // Every 1000 events, log stats
