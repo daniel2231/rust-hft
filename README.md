@@ -103,6 +103,33 @@ rm HALT           # 주문 재개
 
 ---
 
+## 실시간 웹 대시보드
+
+`crypto-trader` 실행 시 `config/default.toml`의 `[dashboard]`가 활성화되어 있으면 axum 기반 HTTP/WebSocket 서버가 함께 뜹니다.
+
+```bash
+cargo run --bin crypto-trader
+# INFO crypto_trader::dashboard::server: Dashboard running at http://localhost:3000
+```
+
+브라우저에서 `http://localhost:3000` 접속 시 확인 가능한 정보:
+
+- 실시간 가격 차트 (최근 5분, 300개 포인트)
+- 오더북 상위 10레벨 (매수/매도)
+- 초당 이벤트 수, 연결 상태, 동기화 상태(Buffering/Live)
+- 최근 페이퍼 트레이딩 체결 내역, 매수/매도 카운트
+- 킬 스위치 토글 버튼 (`/halt`, `/resume` 엔드포인트 호출)
+
+상태는 WebSocket(`/ws`)으로 1초마다 push됩니다. 설정은 다음과 같이 조정합니다:
+
+```toml
+[dashboard]
+port = 3000
+enabled = true    # false로 두면 대시보드 서버를 띄우지 않음
+```
+
+---
+
 ## 테스트 방법
 
 ### 전체 테스트 실행
