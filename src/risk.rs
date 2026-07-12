@@ -1,10 +1,14 @@
 use crate::types::{Signal, ValidatedOrder};
-use std::collections::HashSet;
-use std::path::Path;
+use std::collections::{HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{error, warn};
 use uuid::Uuid;
+
+/// Cap on the duplicate-order-ID window so memory stays bounded over long runs.
+const MAX_SEEN_ORDER_IDS: usize = 10_000;
 
 #[derive(Debug, Error)]
 pub enum RiskError {
@@ -24,11 +28,15 @@ pub enum RiskError {
 
 pub struct RiskChecker {
     pub halted: bool,
+    /// Kill-switch flag maintained by a background HALT-file poller.
+    /// Read atomically per check so the hot path never touches the filesystem.
+    halt_flag: Option<Arc<AtomicBool>>,
     pub max_order_qty: f64,
     pub min_free_balance_usdt: f64,
     pub price_band_pct: f64,
     pub max_orders_per_sec: u32,
     seen_order_ids: HashSet<String>,
+    seen_order_queue: VecDeque<String>,
     order_timestamps: Vec<Instant>,
     pub free_balance_usdt: f64,
 }
@@ -42,23 +50,31 @@ impl RiskChecker {
     ) -> Self {
         Self {
             halted: false,
+            halt_flag: None,
             max_order_qty,
             min_free_balance_usdt,
             price_band_pct,
             max_orders_per_sec,
             seen_order_ids: HashSet::new(),
+            seen_order_queue: VecDeque::new(),
             order_timestamps: Vec::new(),
             free_balance_usdt: 10_000.0,
         }
     }
 
-    pub fn check(&mut self, signal: &Signal, mid_price: f64) -> Result<ValidatedOrder, RiskError> {
-        // Check file-based kill switch on every call
-        if Path::new("HALT").exists() {
-            self.halted = true;
-        }
+    /// Wire up the shared kill-switch flag (see the HALT poller in main).
+    pub fn with_halt_flag(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.halt_flag = Some(flag);
+        self
+    }
 
-        if self.halted {
+    pub fn check(&mut self, signal: &Signal, mid_price: f64) -> Result<ValidatedOrder, RiskError> {
+        let file_halt = self
+            .halt_flag
+            .as_ref()
+            .is_some_and(|f| f.load(Ordering::Relaxed));
+
+        if self.halted || file_halt {
             error!("Kill switch active — order blocked");
             return Err(RiskError::KillSwitch);
         }
@@ -125,7 +141,13 @@ impl RiskChecker {
             return Err(RiskError::DuplicateOrderId { id: client_order_id });
         }
 
+        if self.seen_order_queue.len() >= MAX_SEEN_ORDER_IDS {
+            if let Some(oldest) = self.seen_order_queue.pop_front() {
+                self.seen_order_ids.remove(&oldest);
+            }
+        }
         self.seen_order_ids.insert(client_order_id.clone());
+        self.seen_order_queue.push_back(client_order_id.clone());
         self.order_timestamps.push(now);
 
         Ok(ValidatedOrder {

@@ -4,7 +4,6 @@ use anyhow::Result;
 use crossbeam_channel::Sender;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
-use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -142,31 +141,25 @@ pub async fn run_ingestion_with_rest(
                                     let raw = text.as_str();
                                     tracing::debug!("RAW: {}", raw);
 
-                                    if let Ok(v) = serde_json::from_str::<Value>(raw) {
-                                        let event_type =
-                                            v.get("e").and_then(|e| e.as_str()).unwrap_or("");
-                                        match event_type {
-                                            "depthUpdate" => {
-                                                if let Ok(update) =
-                                                    serde_json::from_value::<DepthUpdate>(v)
-                                                {
-                                                    watchdog.touch();
-                                                    let _ = tx.send(MarketEvent::DepthUpdate(update));
-                                                }
-                                            }
-                                            "aggTrade" => {
-                                                if let Ok(trade) =
-                                                    serde_json::from_value::<Trade>(v)
-                                                {
-                                                    watchdog.touch();
-                                                    let _ = tx.send(MarketEvent::Trade(trade));
-                                                }
-                                            }
-                                            _ => {
-                                                info!("Unknown event type: {}", event_type);
-                                            }
+                                    // Parse straight into the typed structs — no intermediate
+                                    // serde_json::Value tree. depthUpdate is tried first since
+                                    // it dominates message volume; an aggTrade fails that parse
+                                    // immediately on its numeric "a" field.
+                                    if let Ok(update) = serde_json::from_str::<DepthUpdate>(raw) {
+                                        if update.event_type == "depthUpdate" {
+                                            watchdog.touch();
+                                            let _ = tx.send(MarketEvent::DepthUpdate(update));
+                                            continue;
                                         }
                                     }
+                                    if let Ok(trade) = serde_json::from_str::<Trade>(raw) {
+                                        if trade.event_type == "aggTrade" {
+                                            watchdog.touch();
+                                            let _ = tx.send(MarketEvent::Trade(trade));
+                                            continue;
+                                        }
+                                    }
+                                    info!("Unrecognized WS message: {}", &raw[..raw.len().min(120)]);
                                 }
                                 Some(Ok(Message::Ping(data))) => {
                                     let _ = write.send(Message::Pong(data)).await;

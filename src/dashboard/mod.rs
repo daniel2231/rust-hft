@@ -45,10 +45,13 @@ pub struct SharedState {
     pub price_history: RwLock<VecDeque<f64>>,
     pub events_last_sec: AtomicU64,
     pub events_last_checkpoint: AtomicU64,
+    /// Kill-switch flag shared with the risk checker; kept in sync with the
+    /// HALT file by a background poller in main.
+    pub halt_flag: Arc<AtomicBool>,
 }
 
 impl SharedState {
-    pub fn new() -> Arc<Self> {
+    pub fn new(halt_flag: Arc<AtomicBool>) -> Arc<Self> {
         Arc::new(Self {
             connected: AtomicBool::new(false),
             is_live: AtomicBool::new(false),
@@ -60,6 +63,7 @@ impl SharedState {
             price_history: RwLock::new(VecDeque::with_capacity(300)),
             events_last_sec: AtomicU64::new(0),
             events_last_checkpoint: AtomicU64::new(0),
+            halt_flag,
         })
     }
 
@@ -88,7 +92,7 @@ impl SharedState {
         let asks = snap.as_ref().map(|s| s.asks.iter().take(10).cloned().collect()).unwrap_or_default();
         let trades: Vec<PaperTrade> = self.recent_trades.read().iter().cloned().collect();
         let price_history: Vec<f64> = self.price_history.read().iter().cloned().collect();
-        let halted = std::path::Path::new("HALT").exists();
+        let halted = self.halt_flag.load(Ordering::Relaxed);
 
         let event_count = self.event_count.load(Ordering::Relaxed);
         let last_checkpoint = self.events_last_checkpoint.load(Ordering::Relaxed);

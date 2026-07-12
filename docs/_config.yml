@@ -14,13 +14,19 @@ defaults:
 nav:
   - title: Overview
     url: /
+  - title: Installation
+    url: /installation/
   - title: Getting Started
     url: /getting-started/
-  - title: Architecture
-    url: /architecture/
+  - title: Configuration
+    url: /configuration/
+  - title: Dashboard
+    url: /dashboard/
   - title: Backtesting
     url: /backtesting/
   - title: Strategy
-    url: /strategy/
-  - title: Operations
-    url: /operations/
+    url: /strategy-development/
+  - title: Production
+    url: /production/
+  - title: AWS
+    url: /aws-deployment/

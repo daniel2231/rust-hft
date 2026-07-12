@@ -6,6 +6,8 @@ Low-latency cryptocurrency algorithmic trading system written in Rust.
 
 GitHub Pages용 문서는 [`docs/`](docs/) 폴더에 있습니다. Repository settings → Pages에서 source를 `main / docs`로 설정하면 Markdown 기반 문서 사이트로 배포됩니다.
 
+상세 사용 문서는 설치, 시작하기, 설정, 백테스팅, 전략 개발, 대시보드, 실전 운영으로 나뉘어 있습니다.
+
 ## Architecture
 
 Multi-threaded pipeline designed for minimal GC latency:
@@ -104,6 +106,33 @@ rm HALT           # 주문 재개
 ### 3. 종료
 
 `Ctrl+C`로 그레이스풀 셧다운됩니다.
+
+---
+
+## 실시간 웹 대시보드
+
+`crypto-trader` 실행 시 `config/default.toml`의 `[dashboard]`가 활성화되어 있으면 axum 기반 HTTP/WebSocket 서버가 함께 뜹니다.
+
+```bash
+cargo run --bin crypto-trader
+# INFO crypto_trader::dashboard::server: Dashboard running at http://localhost:3000
+```
+
+브라우저에서 `http://localhost:3000` 접속 시 확인 가능한 정보:
+
+- 실시간 가격 차트 (최근 5분, 300개 포인트)
+- 오더북 상위 10레벨 (매수/매도)
+- 초당 이벤트 수, 연결 상태, 동기화 상태(Buffering/Live)
+- 최근 페이퍼 트레이딩 체결 내역, 매수/매도 카운트
+- 킬 스위치 토글 버튼 (`/halt`, `/resume` 엔드포인트 호출)
+
+상태는 WebSocket(`/ws`)으로 1초마다 push됩니다. 설정은 다음과 같이 조정합니다:
+
+```toml
+[dashboard]
+port = 3000
+enabled = true    # false로 두면 대시보드 서버를 띄우지 않음
+```
 
 ---
 
