@@ -2,6 +2,8 @@
 
 Low-latency cryptocurrency algorithmic trading system written in Rust.
 
+> 📚 **상세 사용 문서는 [`docs/`](docs/README.md)에 주제별로 정리되어 있습니다** — 설치, 시작하기, 설정, 백테스팅, 전략 개발, 대시보드, 실전 운영.
+
 ## Architecture
 
 Multi-threaded pipeline designed for minimal GC latency:
