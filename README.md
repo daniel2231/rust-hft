@@ -2,6 +2,10 @@
 
 Low-latency cryptocurrency algorithmic trading system written in Rust.
 
+## Documentation
+
+GitHub Pages용 문서는 [`docs/`](docs/) 폴더에 있습니다. Repository settings → Pages에서 source를 `main / docs`로 설정하면 Markdown 기반 문서 사이트로 배포됩니다.
+
 ## Architecture
 
 Multi-threaded pipeline designed for minimal GC latency:
