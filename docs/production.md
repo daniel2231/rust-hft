@@ -103,4 +103,4 @@ ssh -L 3000:localhost:3000 user@server
 | Phase 1 (현재) | Mac Mini 로컬 | ~40–80ms | 기능 개발 및 정확성 검증 |
 | Phase 2 | AWS ap-northeast-1 (도쿄) | ~2–5ms | 전략 구현 후 실운영 |
 
-Binance 선물 매칭 엔진이 도쿄 리전에 있으므로, 레이턴시가 중요해지는 시점에 도쿄 리전 VM으로 이전합니다.
+Binance 선물 매칭 엔진이 도쿄 리전에 있으므로, 레이턴시가 중요해지는 시점에 도쿄 리전 VM으로 이전합니다. 구체적인 EC2 세팅과 단계별 고도화 절차는 [AWS 배포 및 고도화](aws-deployment.md)를 참조하세요.

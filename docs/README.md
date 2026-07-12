@@ -13,6 +13,7 @@ Rust로 작성된 저지연 암호화폐 알고리즘 트레이딩 시스템의 
 | [전략 개발](strategy-development.md) | `Strategy` trait 구현 가이드와 성능 규칙 |
 | [대시보드](dashboard.md) | 실시간 웹 대시보드 사용법 |
 | [실전 운영](production.md) | systemd 배포, 라이브 모드, 24/7 운영 체크리스트 |
+| [AWS 배포 및 고도화](aws-deployment.md) | 도쿄 리전 EC2 세팅, 단계별 고도화 로드맵 (측정 → 튜닝) |
 
 ## 처음이라면
 
@@ -21,6 +22,7 @@ Rust로 작성된 저지연 암호화폐 알고리즘 트레이딩 시스템의 
 3. [전략 개발](strategy-development.md)을 참고해 전략을 구현합니다.
 4. [백테스팅](backtesting.md)으로 과거 데이터에서 PnL을 검증합니다.
 5. 검증이 끝나면 [실전 운영](production.md)을 따라 서버에 배포합니다.
+6. 실운영 규모가 되면 [AWS 배포 및 고도화](aws-deployment.md)를 따라 도쿄 리전으로 이전합니다.
 
 ## 시스템 개요
 
