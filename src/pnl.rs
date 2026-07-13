@@ -28,7 +28,9 @@ impl FifoPnl {
         self.buy_notional += price * qty;
     }
 
-    pub fn on_sell(&mut self, price: f64, qty: f64) {
+    /// Returns the quantity actually matched against open buys — sell
+    /// quantity beyond the open position is ignored (no shorting).
+    pub fn on_sell(&mut self, price: f64, qty: f64) -> f64 {
         let mut remaining = qty;
         while remaining > QTY_EPSILON {
             match self.buy_queue.front_mut() {
@@ -44,6 +46,7 @@ impl FifoPnl {
                 None => break,
             }
         }
+        qty - remaining
     }
 
     pub fn realized_pnl(&self) -> f64 {
@@ -86,6 +89,90 @@ impl FifoPnl {
             .iter()
             .map(|(p, q)| (mark_price - p) * q)
             .sum()
+    }
+
+    /// Cost basis of the open position (Σ entry price × remaining qty).
+    pub fn position_notional(&self) -> f64 {
+        self.buy_queue.iter().map(|(p, q)| p * q).sum()
+    }
+}
+
+/// Simulated trading account for paper mode: a cash balance funded with a
+/// configurable initial capital, debited/credited per fill with a
+/// configurable fee. Wraps [`FifoPnl`] for position/PnL accounting.
+pub struct PaperAccount {
+    pnl: FifoPnl,
+    initial_capital: f64,
+    cash: f64,
+    fee_pct: f64,
+    total_fees: f64,
+}
+
+impl PaperAccount {
+    pub fn new(initial_capital: f64, fee_pct: f64) -> Self {
+        Self {
+            pnl: FifoPnl::new(),
+            initial_capital,
+            cash: initial_capital,
+            fee_pct,
+            total_fees: 0.0,
+        }
+    }
+
+    pub fn on_buy(&mut self, price: f64, qty: f64) {
+        let notional = price * qty;
+        let fee = notional * self.fee_pct / 100.0;
+        self.pnl.on_buy(price, qty);
+        self.cash -= notional + fee;
+        self.total_fees += fee;
+    }
+
+    /// Credits cash only for the quantity actually matched against the open
+    /// position, so an unmatched sell can't mint money out of nothing.
+    pub fn on_sell(&mut self, price: f64, qty: f64) {
+        let matched = self.pnl.on_sell(price, qty);
+        if matched <= QTY_EPSILON {
+            return;
+        }
+        let notional = price * matched;
+        let fee = notional * self.fee_pct / 100.0;
+        self.cash += notional - fee;
+        self.total_fees += fee;
+    }
+
+    pub fn pnl(&self) -> &FifoPnl {
+        &self.pnl
+    }
+
+    pub fn initial_capital(&self) -> f64 {
+        self.initial_capital
+    }
+
+    pub fn cash(&self) -> f64 {
+        self.cash
+    }
+
+    pub fn total_fees(&self) -> f64 {
+        self.total_fees
+    }
+
+    /// Cash plus the open position valued at `mark_price` (falls back to the
+    /// position's cost basis when no market price is available).
+    pub fn equity(&self, mark_price: Option<f64>) -> f64 {
+        let position_value = match mark_price {
+            Some(m) => self.pnl.position_qty() * m,
+            None => self.pnl.position_notional(),
+        };
+        self.cash + position_value
+    }
+
+    /// Total return vs the initial capital, fees included.
+    pub fn return_on_capital_pct(&self, mark_price: Option<f64>) -> f64 {
+        if self.initial_capital > 0.0 {
+            (self.equity(mark_price) - self.initial_capital) / self.initial_capital * 100.0
+        } else {
+            0.0
+        }
     }
 }
 
@@ -140,5 +227,35 @@ mod tests {
         pnl.on_buy(100.0, 2.0);
         assert!((pnl.unrealized_pnl(110.0) - 20.0).abs() < 1e-9);
         assert!((pnl.unrealized_pnl(90.0) + 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_account_round_trip_with_fees() {
+        let mut acct = PaperAccount::new(730.0, 0.02);
+        acct.on_buy(100.0, 1.0); // cost 100 + 0.02 fee
+        assert!((acct.cash() - 629.98).abs() < 1e-9);
+        acct.on_sell(110.0, 1.0); // proceeds 110 - 0.022 fee
+        assert!((acct.cash() - 739.958).abs() < 1e-9);
+        assert!((acct.total_fees() - 0.042).abs() < 1e-9);
+        // flat position: equity == cash, return vs capital includes fees
+        assert!((acct.equity(Some(105.0)) - acct.cash()).abs() < 1e-9);
+        assert!((acct.return_on_capital_pct(None) - (739.958 - 730.0) / 730.0 * 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_account_equity_marks_open_position() {
+        let mut acct = PaperAccount::new(1000.0, 0.0);
+        acct.on_buy(100.0, 2.0); // cash 800, position 2.0
+        assert!((acct.equity(Some(110.0)) - 1020.0).abs() < 1e-9);
+        assert!((acct.equity(None) - 1000.0).abs() < 1e-9); // cost-basis fallback
+        assert!((acct.return_on_capital_pct(Some(110.0)) - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_account_unmatched_sell_credits_nothing() {
+        let mut acct = PaperAccount::new(500.0, 0.02);
+        acct.on_sell(100.0, 1.0); // no position — must not mint cash
+        assert!((acct.cash() - 500.0).abs() < 1e-9);
+        assert_eq!(acct.total_fees(), 0.0);
     }
 }

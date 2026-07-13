@@ -9,11 +9,32 @@ pub struct Config {
     /// Strategy to run in crypto-trader ("noop" | "pingpong").
     #[serde(default = "default_strategy")]
     pub strategy: String,
+    /// Paper-trading virtual account settings.
+    #[serde(default)]
+    pub paper: PaperConfig,
     pub risk: RiskConfig,
     pub orderbook: OrderbookConfig,
     pub exchange: ExchangeConfig,
     pub watchdog: WatchdogConfig,
     pub dashboard: DashboardConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PaperConfig {
+    /// Virtual starting capital for the paper account (USDT).
+    pub initial_capital_usdt: f64,
+    /// Simulated fee per fill, percent of notional (Binance futures maker
+    /// fee is 0.02, taker 0.05).
+    pub fee_pct: f64,
+}
+
+impl Default for PaperConfig {
+    fn default() -> Self {
+        Self {
+            initial_capital_usdt: 10_000.0,
+            fee_pct: 0.02,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]

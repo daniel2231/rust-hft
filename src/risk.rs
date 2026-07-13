@@ -18,6 +18,8 @@ pub enum RiskError {
     MaxQtyExceeded { qty: f64, max: f64 },
     #[error("Insufficient balance: {balance:.2} USDT (min {min:.2})")]
     InsufficientBalance { balance: f64, min: f64 },
+    #[error("Insufficient funds: order notional {notional:.2} USDT exceeds balance {balance:.2}")]
+    InsufficientFunds { notional: f64, balance: f64 },
     #[error("Fat-finger: price {price:.2} deviates {pct:.2}% from mid {mid:.2} (max {max_pct:.1}%)")]
     FatFinger { price: f64, mid: f64, pct: f64, max_pct: f64 },
     #[error("Rate limit: {current}/{max} orders/sec")]
@@ -31,6 +33,9 @@ pub struct RiskChecker {
     /// Kill-switch flag maintained by a background HALT-file poller.
     /// Read atomically per check so the hot path never touches the filesystem.
     halt_flag: Option<Arc<AtomicBool>>,
+    /// Live cash balance (f64 bits) mirrored from the paper account after
+    /// each fill. When set, it replaces the static `free_balance_usdt`.
+    balance_source: Option<Arc<std::sync::atomic::AtomicU64>>,
     pub max_order_qty: f64,
     pub min_free_balance_usdt: f64,
     pub price_band_pct: f64,
@@ -51,6 +56,7 @@ impl RiskChecker {
         Self {
             halted: false,
             halt_flag: None,
+            balance_source: None,
             max_order_qty,
             min_free_balance_usdt,
             price_band_pct,
@@ -68,6 +74,13 @@ impl RiskChecker {
         self
     }
 
+    /// Wire up the live paper-account balance (f64 bits). Balance checks
+    /// then track the simulated account instead of a static number.
+    pub fn with_balance_source(mut self, source: Arc<std::sync::atomic::AtomicU64>) -> Self {
+        self.balance_source = Some(source);
+        self
+    }
+
     pub fn check(&mut self, signal: &Signal, mid_price: f64) -> Result<ValidatedOrder, RiskError> {
         let file_halt = self
             .halt_flag
@@ -79,9 +92,9 @@ impl RiskChecker {
             return Err(RiskError::KillSwitch);
         }
 
-        let (price, qty) = match signal {
-            Signal::Buy { price, qty } => (*price, *qty),
-            Signal::Sell { price, qty } => (*price, *qty),
+        let (price, qty, is_buy) = match signal {
+            Signal::Buy { price, qty } => (*price, *qty, true),
+            Signal::Sell { price, qty } => (*price, *qty, false),
             Signal::Hold => unreachable!("Hold signals should not be passed to check()"),
         };
 
@@ -90,12 +103,30 @@ impl RiskChecker {
             return Err(RiskError::MaxQtyExceeded { qty, max: self.max_order_qty });
         }
 
-        if self.free_balance_usdt < self.min_free_balance_usdt {
-            warn!(balance = self.free_balance_usdt, "Insufficient balance — blocked");
-            return Err(RiskError::InsufficientBalance {
-                balance: self.free_balance_usdt,
-                min: self.min_free_balance_usdt,
-            });
+        // Balance checks apply to buys only — sells release cash, and
+        // blocking them would strand an open position when the balance is
+        // already below the floor.
+        if is_buy {
+            let balance = self
+                .balance_source
+                .as_ref()
+                .map(|s| f64::from_bits(s.load(Ordering::Relaxed)))
+                .unwrap_or(self.free_balance_usdt);
+
+            if balance < self.min_free_balance_usdt {
+                warn!(balance, "Insufficient balance — blocked");
+                return Err(RiskError::InsufficientBalance {
+                    balance,
+                    min: self.min_free_balance_usdt,
+                });
+            }
+
+            // 0.1% headroom so the simulated fill fee can't push cash negative.
+            let notional = price * qty * 1.001;
+            if notional > balance {
+                warn!(notional, balance, "Order notional exceeds balance — blocked");
+                return Err(RiskError::InsufficientFunds { notional, balance });
+            }
         }
 
         if mid_price > 0.0 {

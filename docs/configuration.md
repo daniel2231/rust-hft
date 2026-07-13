@@ -13,6 +13,10 @@ mode = "paper"     # "paper" 또는 "live" (live는 M6 이후)
 symbol = "BTCUSDT"
 strategy = "pingpong"   # "noop" | "pingpong"
 
+[paper]
+initial_capital_usdt = 730.0   # 가상 초기 자본 (USDT). 백만원 ≈ 730 USDT
+fee_pct = 0.02                 # 체결당 수수료 % (Binance 선물 maker 0.02 / taker 0.05)
+
 [risk]
 max_order_qty = 0.01          # 최대 주문 수량 (기초자산 단위, BTC)
 min_free_balance_usdt = 100.0 # 최소 가용 잔고 (USDT)
@@ -43,6 +47,15 @@ enabled = true                # false면 대시보드 서버를 띄우지 않음
 | `mode` | `"paper"` | `paper`: 주문을 로그로만 기록. `live`: 실제 거래소 주문 (M6 이후 지원 예정) |
 | `symbol` | `"BTCUSDT"` | 구독할 심볼. Binance USDT-M 선물 심볼 표기를 따릅니다 |
 | `strategy` | `"noop"` | `crypto-trader`가 실행할 전략. `noop`(거래 없음) 또는 `pingpong`(테스트용 스프레드 캡처). 생략 시 `noop` |
+
+### `[paper]` — 가상 계좌 (Paper 모드)
+
+| 키 | 기본값 | 설명 |
+|----|--------|------|
+| `initial_capital_usdt` | `10000.0` | 가상 계좌의 시작 자본(USDT). 체결마다 현금이 차감/가산되고, 잔고를 초과하는 매수는 리스크 체크에서 거부됩니다 |
+| `fee_pct` | `0.02` | 체결마다 체결 대금의 이 비율(%)만큼 수수료로 차감. Binance 선물 maker 0.02 / taker 0.05 |
+
+대시보드의 수익률은 이 초기 자본 대비 현재 자산(현금 + 포지션 평가액)으로 계산되며 수수료가 반영됩니다. 프로세스를 재시작하면 계좌가 초기 자본으로 리셋됩니다. `pingpong` 전략의 주문 수량은 초기 자본의 90% 이내로 자동 조정됩니다.
 
 ### `[risk]` — 주문 안전장치
 

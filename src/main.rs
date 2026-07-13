@@ -47,7 +47,12 @@ async fn main() -> Result<()> {
     }
 
     // Shared dashboard state
-    let dash_state = dashboard::SharedState::new(cfg.symbol.clone(), Arc::clone(&halt_flag));
+    let dash_state = dashboard::SharedState::new(
+        cfg.symbol.clone(),
+        cfg.paper.initial_capital_usdt,
+        cfg.paper.fee_pct,
+        Arc::clone(&halt_flag),
+    );
 
     let cfg_thread = cfg.clone();
     let order_tx_thread = order_tx.clone();
@@ -60,7 +65,12 @@ async fn main() -> Result<()> {
             cfg_thread.orderbook.depth_levels,
         );
         let mut strat: Box<dyn strategy::Strategy> = match cfg_thread.strategy.as_str() {
-            "pingpong" => Box::new(strategy::PingPongStrategy::default()),
+            // Size ping-pong orders to ~90% of the virtual capital so the
+            // strategy actually trades within the configured account.
+            "pingpong" => Box::new(
+                strategy::PingPongStrategy::default()
+                    .with_max_notional(cfg_thread.paper.initial_capital_usdt * 0.9),
+            ),
             "noop" => Box::new(strategy::NoOpStrategy),
             other => {
                 tracing::warn!(strategy = other, "Unknown strategy in config — falling back to noop");
@@ -73,7 +83,8 @@ async fn main() -> Result<()> {
             cfg_thread.risk.price_band_pct,
             cfg_thread.risk.max_orders_per_sec,
         )
-        .with_halt_flag(halt_flag_risk);
+        .with_halt_flag(halt_flag_risk)
+        .with_balance_source(Arc::clone(&dash_state_ob.cash_bits));
         let mut event_count: u64 = 0;
 
         for event in &market_rx {

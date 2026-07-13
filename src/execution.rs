@@ -109,16 +109,24 @@ impl PaperExecutor {
             client_id: order.client_order_id.clone(),
         };
 
-        match &order.signal {
-            Signal::Buy { .. } => {
-                state.buy_count.fetch_add(1, Ordering::Relaxed);
-                state.pnl.write().on_buy(price, qty);
+        {
+            let mut acct = state.account.write();
+            match &order.signal {
+                Signal::Buy { .. } => {
+                    state.buy_count.fetch_add(1, Ordering::Relaxed);
+                    acct.on_buy(price, qty);
+                }
+                Signal::Sell { .. } => {
+                    state.sell_count.fetch_add(1, Ordering::Relaxed);
+                    acct.on_sell(price, qty);
+                }
+                Signal::Hold => {}
             }
-            Signal::Sell { .. } => {
-                state.sell_count.fetch_add(1, Ordering::Relaxed);
-                state.pnl.write().on_sell(price, qty);
-            }
-            Signal::Hold => {}
+            // Mirror the cash balance for the risk checker (lock-free read
+            // on the sync thread).
+            state
+                .cash_bits
+                .store(acct.cash().to_bits(), Ordering::Relaxed);
         }
 
         state.add_trade(trade);
