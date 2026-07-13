@@ -1,3 +1,7 @@
+---
+title: Dashboard
+---
+
 # 실시간 웹 대시보드
 
 `crypto-trader` 실행 시 `config/default.toml`의 `[dashboard]`가 활성화되어 있으면(기본값) axum 기반 HTTP/WebSocket 서버가 함께 뜹니다.

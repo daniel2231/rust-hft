@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
+    <meta name="description" content="{{ site.description }}">
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="{{ '/' | relative_url }}">
+        <span class="brand-mark">ct</span>
+        <span>
+          <strong>{{ site.title }}</strong>
+          <small>Rust HFT documentation</small>
+        </span>
+      </a>
+      <nav class="site-nav" aria-label="Documentation navigation">
+        {% for item in site.nav %}
+          <a href="{{ item.url | relative_url }}" {% if page.url == item.url %}aria-current="page"{% endif %}>
+            {{ item.title }}
+          </a>
+        {% endfor %}
+      </nav>
+    </header>
+
+    <main class="page-shell">
+      <article class="content">
+        {{ content }}
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <span>Source documentation lives in <code>docs/</code>.</span>
+      <a href="https://github.com/">Deploy with GitHub Pages</a>
+    </footer>
+  </body>
+</html>

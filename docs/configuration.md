@@ -1,3 +1,7 @@
+---
+title: Configuration
+---
+
 # 설정
 
 모든 런타임 설정은 `config/default.toml`에 있습니다. `crypto-trader`와 `backtest` 두 바이너리 모두 이 파일을 읽습니다.

@@ -1,6 +1,10 @@
+---
+title: Getting Started
+---
+
 # 시작하기
 
-[설치](installation.md)를 마친 상태를 가정합니다.
+[설치](../installation/)를 마친 상태를 가정합니다.
 
 ## Paper 트레이딩 모드 실행 (기본)
 
@@ -12,7 +16,7 @@ RUST_LOG=info cargo run --bin crypto-trader
 
 정상 기동 시 로그:
 
-```
+```text
 INFO crypto_trader::main: crypto-trader starting mode=paper symbol=BTCUSDT
 INFO crypto_trader::ingestion: Connecting to wss://fstream.binance.com/ws/btcusdt@depth@100ms/...
 INFO crypto_trader::ingestion: WebSocket connected
@@ -20,7 +24,7 @@ INFO crypto_trader::orderbook: Snapshot applied last_update_id=123456 symbol="BT
 INFO crypto_trader::main: [event=1000] best_bid=65000.10 best_ask=65001.20
 ```
 
-### 로그 레벨 조정
+## 로그 레벨 조정
 
 ```bash
 RUST_LOG=debug cargo run --bin crypto-trader   # raw WebSocket 메시지까지 출력
@@ -28,30 +32,30 @@ RUST_LOG=info  cargo run --bin crypto-trader   # 기본 — 연결/스냅샷/100
 RUST_LOG=warn  cargo run --bin crypto-trader   # 경고·오류만
 ```
 
-### "이벤트"란?
+## 이벤트란?
 
 로그의 이벤트 1개는 **Binance가 100ms마다 보내는 호가 변동 묶음 1개**(`depthUpdate`)입니다. BTCUSDT처럼 활발한 종목은 초당 약 10개의 이벤트가 꾸준히 들어옵니다.
 
 ## 주문 로그 확인
 
-전략이 Buy/Sell 신호를 내고 리스크 체크를 통과하면 `logs/orders_paper.log`에 기록됩니다:
+전략이 Buy/Sell 신호를 내고 리스크 체크를 통과하면 `logs/orders_paper.log`에 기록됩니다.
 
-```
+```text
 [PAPER] 2026-06-15T09:00:05Z | BUY | BTCUSDT | qty=0.0100 | price=65000.00 | signal=Buy | client_id=uuid-xxxx
 ```
 
-> 어떤 전략을 돌릴지는 `config/default.toml`의 `strategy` 키로 정합니다. `noop`은 항상 Hold라 주문이 없고, `pingpong`(테스트용 스프레드 캡처 전략)으로 두면 실시간 데이터 기준으로 페이퍼 주문이 발생하며 대시보드에서 수익률을 지켜볼 수 있습니다. 자기 전략을 만드는 방법은 [전략 개발](strategy-development.md) 참조.
+> 어떤 전략을 돌릴지는 `config/default.toml`의 `strategy` 키로 정합니다. `noop`은 항상 Hold라 주문이 없고, `pingpong`(테스트용 스프레드 캡처 전략)으로 두면 실시간 데이터 기준으로 페이퍼 주문이 발생하며 대시보드에서 수익률을 지켜볼 수 있습니다. 자기 전략을 만드는 방법은 [전략 개발](../strategy-development/)을 참조하세요.
 
-## 킬 스위치 (긴급 중단)
+## 킬 스위치
 
-실행 중 모든 주문을 즉시 차단하려면 프로젝트 루트에 `HALT` 파일을 생성합니다:
+실행 중 모든 주문을 즉시 차단하려면 프로젝트 루트에 `HALT` 파일을 생성합니다.
 
 ```bash
-touch HALT        # 주문 차단 시작 (데이터 수신은 계속됨)
+touch HALT        # 주문 차단 시작, 데이터 수신은 계속됨
 rm HALT           # 주문 재개
 ```
 
-백그라운드 태스크가 0.5초마다 파일 존재 여부를 폴링해 공유 플래그를 갱신하고, 리스크 체크는 이 플래그를 읽어 `KillSwitch` 오류로 주문을 거부합니다. 대시보드의 토글 버튼([대시보드](dashboard.md) 참조)으로도 같은 동작을 할 수 있습니다.
+백그라운드 태스크가 0.5초마다 파일 존재 여부를 폴링해 공유 플래그를 갱신하고, 리스크 체크는 이 플래그를 읽어 `KillSwitch` 오류로 주문을 거부합니다. 대시보드의 토글 버튼으로도 같은 동작을 할 수 있습니다.
 
 ## 종료
 
@@ -59,13 +63,13 @@ rm HALT           # 주문 재개
 
 ## 연결 안정성
 
-- **Watchdog:** `timeout_secs`(기본 30초) 동안 메시지가 없으면 자동 재연결합니다.
+- **Watchdog:** `timeout_secs` 기본 30초 동안 메시지가 없으면 자동 재연결합니다.
 - **시퀀스 갭:** 오더북 업데이트 ID에 갭이 감지되면 자동으로 스냅샷을 다시 받아 재동기화합니다. 재동기화 중에는 대시보드 상태가 `Buffering`으로 표시됩니다.
 
 ## 테스트 실행
 
 ```bash
-cargo test                    # 전체 (orderbook 5 + risk 5 + backtest 3 = 13개)
+cargo test                    # 전체
 cargo test orderbook          # 오더북 테스트만
 cargo test risk               # 리스크 테스트만
 cargo test backtest           # 백테스트 테스트만
@@ -74,6 +78,6 @@ cargo test -- --nocapture     # println! 출력 포함
 
 ## 다음 단계
 
-- 실행 중 상태를 눈으로 보려면 → [대시보드](dashboard.md)
-- 파라미터를 바꾸려면 → [설정](configuration.md)
-- 전략을 만들려면 → [전략 개발](strategy-development.md)
+- 실행 중 상태를 눈으로 보려면 [대시보드](../dashboard/)를 확인합니다.
+- 파라미터를 바꾸려면 [설정](../configuration/)을 확인합니다.
+- 전략을 만들려면 [전략 개발](../strategy-development/)을 확인합니다.

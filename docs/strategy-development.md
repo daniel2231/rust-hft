@@ -1,3 +1,7 @@
+---
+title: Strategy Development
+---
+
 # 전략 개발
 
 전략은 `src/strategy/` 디렉토리의 `Strategy` trait을 구현해 작성합니다.

@@ -1,0 +1,32 @@
+title: crypto-trader
+description: Low-latency cryptocurrency algorithmic trading system written in Rust.
+baseurl: "/rust-hft"
+url: ""
+markdown: kramdown
+permalink: pretty
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+nav:
+  - title: Overview
+    url: /
+  - title: Installation
+    url: /installation/
+  - title: Getting Started
+    url: /getting-started/
+  - title: Configuration
+    url: /configuration/
+  - title: Dashboard
+    url: /dashboard/
+  - title: Backtesting
+    url: /backtesting/
+  - title: Strategy
+    url: /strategy-development/
+  - title: Production
+    url: /production/
+  - title: AWS
+    url: /aws-deployment/

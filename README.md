@@ -2,7 +2,11 @@
 
 Low-latency cryptocurrency algorithmic trading system written in Rust.
 
-> 📚 **상세 사용 문서는 [`docs/`](docs/README.md)에 주제별로 정리되어 있습니다** — 설치, 시작하기, 설정, 백테스팅, 전략 개발, 대시보드, 실전 운영.
+## Documentation
+
+GitHub Pages용 문서는 [`docs/`](docs/) 폴더에 있습니다. Repository settings → Pages에서 source를 `main / docs`로 설정하면 Markdown 기반 문서 사이트로 배포됩니다.
+
+상세 사용 문서는 설치, 시작하기, 설정, 백테스팅, 전략 개발, 대시보드, 실전 운영으로 나뉘어 있습니다.
 
 ## Architecture
 

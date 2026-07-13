@@ -1,3 +1,7 @@
+---
+title: Documentation
+---
+
 # crypto-trader 문서
 
 Rust로 작성된 저지연 암호화폐 알고리즘 트레이딩 시스템의 사용 문서입니다.

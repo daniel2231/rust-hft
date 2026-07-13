@@ -1,3 +1,7 @@
+---
+title: Installation
+---
+
 # 설치
 
 ## 사전 요구사항
