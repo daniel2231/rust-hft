@@ -1,5 +1,6 @@
 mode = "paper"
 symbol = "BTCUSDT"
+strategy = "pingpong"   # "noop" | "pingpong"
 
 [risk]
 max_order_qty = 0.01

@@ -1,5 +1,6 @@
 pub mod server;
 
+use crate::pnl::FifoPnl;
 use crate::types::OrderbookSnapshot;
 use parking_lot::RwLock;
 use serde::Serialize;
@@ -32,6 +33,11 @@ pub struct DashboardState {
     pub sell_count: u64,
     pub halted: bool,
     pub price_history: Vec<f64>,
+    pub realized_pnl: f64,
+    pub return_pct: f64,
+    pub position_qty: f64,
+    pub avg_entry_price: Option<f64>,
+    pub unrealized_pnl: Option<f64>,
 }
 
 pub struct SharedState {
@@ -45,6 +51,9 @@ pub struct SharedState {
     pub price_history: RwLock<VecDeque<f64>>,
     pub events_last_sec: AtomicU64,
     pub events_last_checkpoint: AtomicU64,
+    /// Paper-trading PnL, updated per fill by the execution task (off the
+    /// hot path) and read once per second by the dashboard push.
+    pub pnl: RwLock<FifoPnl>,
     /// Kill-switch flag shared with the risk checker; kept in sync with the
     /// HALT file by a background poller in main.
     pub halt_flag: Arc<AtomicBool>,
@@ -63,6 +72,7 @@ impl SharedState {
             price_history: RwLock::new(VecDeque::with_capacity(300)),
             events_last_sec: AtomicU64::new(0),
             events_last_checkpoint: AtomicU64::new(0),
+            pnl: RwLock::new(FifoPnl::new()),
             halt_flag,
         })
     }
@@ -94,6 +104,17 @@ impl SharedState {
         let price_history: Vec<f64> = self.price_history.read().iter().cloned().collect();
         let halted = self.halt_flag.load(Ordering::Relaxed);
 
+        let (realized_pnl, return_pct, position_qty, avg_entry_price, unrealized_pnl) = {
+            let pnl = self.pnl.read();
+            (
+                pnl.realized_pnl(),
+                pnl.return_pct(),
+                pnl.position_qty(),
+                pnl.avg_entry_price(),
+                best_bid.map(|mark| pnl.unrealized_pnl(mark)),
+            )
+        };
+
         let event_count = self.event_count.load(Ordering::Relaxed);
         let last_checkpoint = self.events_last_checkpoint.load(Ordering::Relaxed);
         let events_per_sec = (event_count.saturating_sub(last_checkpoint)) as f64;
@@ -114,6 +135,11 @@ impl SharedState {
             sell_count: self.sell_count.load(Ordering::Relaxed),
             halted,
             price_history,
+            realized_pnl,
+            return_pct,
+            position_qty,
+            avg_entry_price,
+            unrealized_pnl,
         }
     }
 }

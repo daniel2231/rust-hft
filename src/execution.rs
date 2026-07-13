@@ -112,9 +112,11 @@ impl PaperExecutor {
         match &order.signal {
             Signal::Buy { .. } => {
                 state.buy_count.fetch_add(1, Ordering::Relaxed);
+                state.pnl.write().on_buy(price, qty);
             }
             Signal::Sell { .. } => {
                 state.sell_count.fetch_add(1, Ordering::Relaxed);
+                state.pnl.write().on_sell(price, qty);
             }
             Signal::Hold => {}
         }

@@ -6,6 +6,9 @@ use std::fs;
 pub struct Config {
     pub mode: String,
     pub symbol: String,
+    /// Strategy to run in crypto-trader ("noop" | "pingpong").
+    #[serde(default = "default_strategy")]
+    pub strategy: String,
     pub risk: RiskConfig,
     pub orderbook: OrderbookConfig,
     pub exchange: ExchangeConfig,
@@ -41,6 +44,10 @@ pub struct ExchangeConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct WatchdogConfig {
     pub timeout_secs: u64,
+}
+
+fn default_strategy() -> String {
+    "noop".to_string()
 }
 
 pub fn load_config(path: &str) -> Result<Config> {
