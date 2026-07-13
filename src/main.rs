@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     }
 
     // Shared dashboard state
-    let dash_state = dashboard::SharedState::new(Arc::clone(&halt_flag));
+    let dash_state = dashboard::SharedState::new(cfg.symbol.clone(), Arc::clone(&halt_flag));
 
     let cfg_thread = cfg.clone();
     let order_tx_thread = order_tx.clone();

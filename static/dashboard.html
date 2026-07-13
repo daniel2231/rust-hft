@@ -53,6 +53,12 @@
   .ob-bar-ask { height: 100%; background: #3d1f1f; border-radius: 2px; }
   .ob-section-title { font-size: 11px; color: #8b949e; margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 1px; }
   #no-data { text-align: center; color: #8b949e; padding: 40px; }
+  @media (max-width: 900px) {
+    .row-3, .row-2 { grid-template-columns: 1fr; }
+    .topbar { flex-wrap: wrap; gap: 8px 16px; padding: 10px 16px; }
+    .topbar-price { font-size: 18px; }
+    .container { padding: 12px; }
+  }
 </style>
 </head>
 <body>
@@ -60,6 +66,7 @@
 <div class="topbar">
   <h1>crypto-trader</h1>
   <span id="sync-badge" class="badge badge-disconnected">Disconnected</span>
+  <span id="topbar-symbol" class="topbar-meta" style="font-weight:600;color:#e6edf3">—</span>
   <span id="topbar-price" class="topbar-price">—</span>
   <span id="topbar-spread" class="topbar-meta">spread: —</span>
   <span style="margin-left:auto" id="topbar-eps" class="topbar-meta">— events/sec</span>
@@ -91,7 +98,7 @@
   <!-- Row 2: Charts -->
   <div class="row row-2">
     <div class="card">
-      <div class="card-title">BTC 가격 (최근 5분)</div>
+      <div class="card-title" id="price-chart-title">가격 (최근 5분)</div>
       <div class="chart-wrap">
         <canvas id="priceChart"></canvas>
       </div>
@@ -109,7 +116,7 @@
     <div class="card">
       <div class="card-title">수익률 (Paper)</div>
       <div class="big-number" id="pnl-return">0.0000%</div>
-      <div class="sub-text" id="pnl-return-sub">실현 PnL / 총 매수 대금</div>
+      <div class="sub-text" id="pnl-return-sub">실현 PnL / 총 매수 대금 · 수수료·슬리피지 미반영</div>
       <div class="chart-wrap" style="height:90px;margin-top:10px">
         <canvas id="pnlChart"></canvas>
       </div>
@@ -132,13 +139,13 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-title">거래 통계</div>
+      <div class="card-title">세션 정보</div>
+      <div class="stat-row"><span class="stat-label">심볼</span><span class="stat-value" id="stat-symbol">—</span></div>
       <div class="stat-row"><span class="stat-label">총 매수</span><span class="stat-value" id="stat-buy">0건</span></div>
       <div class="stat-row"><span class="stat-label">총 매도</span><span class="stat-value" id="stat-sell">0건</span></div>
-      <div class="stat-row"><span class="stat-label">Best Bid</span><span class="stat-value" id="stat-bid">—</span></div>
-      <div class="stat-row"><span class="stat-label">Best Ask</span><span class="stat-value" id="stat-ask">—</span></div>
-      <div class="stat-row"><span class="stat-label">스프레드</span><span class="stat-value" id="stat-spread">—</span></div>
       <div class="stat-row"><span class="stat-label">오더북 상태</span><span class="stat-value" id="stat-sync">—</span></div>
+      <div class="stat-row"><span class="stat-label">측정 시작</span><span class="stat-value" id="stat-started">—</span></div>
+      <div class="stat-row"><span class="stat-label">가동 시간</span><span class="stat-value" id="stat-uptime">—</span></div>
     </div>
   </div>
 </div>
@@ -224,8 +231,18 @@ function setDisconnected() {
   document.getElementById('conn-sub').textContent = '재연결 중...';
 }
 
+function formatUptime(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + (s % 60) + 's';
+  return s + 's';
+}
+
 function update(d) {
   // Topbar
+  document.getElementById('topbar-symbol').textContent = d.symbol || '—';
+  document.getElementById('price-chart-title').textContent = (d.symbol || '') + ' 가격 (최근 5분)';
   const price = d.best_bid ? d.best_bid.toFixed(2) : '—';
   document.getElementById('topbar-price').textContent = price ? '$' + price : '—';
   document.getElementById('topbar-spread').textContent = d.spread ? 'spread: $' + d.spread.toFixed(2) : 'spread: —';
@@ -329,18 +346,30 @@ function update(d) {
   document.getElementById('stat-position').textContent = d.position_qty.toFixed(4);
   document.getElementById('stat-entry').textContent = d.avg_entry_price ? '$' + d.avg_entry_price.toFixed(2) : '—';
 
-  // Stats
+  // Session info
+  document.getElementById('stat-symbol').textContent = d.symbol || '—';
   document.getElementById('stat-buy').textContent = d.buy_count + '건';
   document.getElementById('stat-sell').textContent = d.sell_count + '건';
-  document.getElementById('stat-bid').textContent = d.best_bid ? '$' + d.best_bid.toFixed(2) : '—';
-  document.getElementById('stat-ask').textContent = d.best_ask ? '$' + d.best_ask.toFixed(2) : '—';
-  document.getElementById('stat-spread').textContent = d.spread ? '$' + d.spread.toFixed(2) : '—';
   document.getElementById('stat-sync').textContent = d.sync_state;
+  if (d.started_at_ms) {
+    const started = new Date(d.started_at_ms);
+    document.getElementById('stat-started').textContent = started.toLocaleTimeString('en-GB');
+    document.getElementById('stat-uptime').textContent = formatUptime(Date.now() - d.started_at_ms);
+  }
 }
 
 function toggleHalt() {
+  // Halting is the safe direction — do it immediately. Resuming re-enables
+  // live orders, so ask first to guard against misclicks.
+  if (halted && !confirm('주문을 재개할까요? 전략이 다시 주문을 내기 시작합니다.')) return;
   const endpoint = halted ? '/resume' : '/halt';
-  fetch(endpoint).catch(() => {});
+  fetch(endpoint).then(r => {
+    if (!r.ok) throw new Error(r.status);
+  }).catch(() => {
+    const killStatus = document.getElementById('kill-status');
+    killStatus.textContent = '⚠ 요청 실패 — 서버 상태를 확인하세요';
+    killStatus.style.color = '#d29922';
+  });
 }
 
 connect();

@@ -39,9 +39,15 @@ pub struct DashboardState {
     pub avg_entry_price: Option<f64>,
     pub unrealized_pnl: Option<f64>,
     pub pnl_history: Vec<f64>,
+    pub symbol: String,
+    /// Process start, epoch milliseconds — the reference point for the PnL
+    /// figures (they reset on restart).
+    pub started_at_ms: u64,
 }
 
 pub struct SharedState {
+    pub symbol: String,
+    pub started_at_ms: u64,
     pub connected: AtomicBool,
     pub is_live: AtomicBool,
     pub event_count: AtomicU64,
@@ -64,8 +70,14 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(halt_flag: Arc<AtomicBool>) -> Arc<Self> {
+    pub fn new(symbol: String, halt_flag: Arc<AtomicBool>) -> Arc<Self> {
+        let started_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         Arc::new(Self {
+            symbol,
+            started_at_ms,
             connected: AtomicBool::new(false),
             is_live: AtomicBool::new(false),
             event_count: AtomicU64::new(0),
@@ -170,6 +182,8 @@ impl SharedState {
             avg_entry_price,
             unrealized_pnl,
             pnl_history,
+            symbol: self.symbol.clone(),
+            started_at_ms: self.started_at_ms,
         }
     }
 }
