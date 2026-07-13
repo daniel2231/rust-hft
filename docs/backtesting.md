@@ -6,27 +6,61 @@ title: Backtesting
 
 `backtest` 바이너리는 과거 또는 합성 `depthUpdate` 이벤트를 실전과 **동일한 파이프라인**인 orderbook, strategy, risk에 흘려보내 전략의 PnL을 시뮬레이션합니다. 네트워크 연결은 필요 없습니다.
 
-## 빠른 실행
+## 사용법
 
-인자 없이 실행하면 결정적 합성 데이터 100개 이벤트를 생성해 돌립니다. 파이프라인 자체가 정상인지 빠르게 확인하는 용도입니다.
+```text
+cargo run --bin backtest -- [data.ndjson] [--strategy noop|pingpong] [--events N]
+```
+
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `data.ndjson` | (없음 → 합성 데이터) | 히스토리컬 데이터 파일 경로 |
+| `--strategy` | `noop` | 전략 선택. `pingpong`은 내장 스프레드 캡처 테스트 전략 |
+| `--events` | `100` | 합성 데이터 모드에서 생성할 이벤트 수 (100ms 간격 → 10000개 ≈ 약 17분 분량) |
+
+## 빠른 실행 — 합성 데이터
+
+인자 없이 실행하면 시드 고정된 랜덤워크 합성 데이터 100개 이벤트를 생성해 돌립니다(실행마다 동일한 결과). 파이프라인 자체가 정상인지 빠르게 확인하는 용도입니다.
 
 ```bash
 cargo run --bin backtest
 ```
 
-출력:
+> 기본 `NoOpStrategy`는 항상 `Hold`를 반환하므로 거래가 0건입니다.
+
+## 내장 테스트 전략 — Ping-Pong
+
+`PingPongStrategy`(`src/strategy/ping_pong.rs`)는 수익률 리포팅을 시험해 볼 수 있는 내장 전략입니다: 포지션이 없으면 best bid에 매수하고, best ask가 진입가 대비 +0.02%를 넘으면 매도(익절), best bid가 −0.5% 아래로 내려가면 매도(손절)합니다.
+
+```bash
+cargo run --bin backtest -- --strategy pingpong --events 10000
+```
+
+출력 예시:
 
 ```text
 === Backtest Result ===
-Total trades : 0
-Buy trades   : 0
-Sell trades  : 0
-Total volume : 0.0000
-Realized PnL : 0.00 USDT
+Strategy     : pingpong
+Total trades : 2171
+Buy trades   : 1086
+Sell trades  : 1085
+Total volume : 21.7100
+Buy notional : 703721.16 USDT
+Realized PnL : 215.36 USDT
+Return       : 0.0306% (PnL / buy notional)
 ======================
 ```
 
-> 기본 `NoOpStrategy`는 항상 `Hold`를 반환하므로 거래가 0건입니다. 실제 전략으로 바꾸는 방법은 아래 전략 교체를 참조하세요.
+- **Buy notional**: 총 매수 대금 (체결가 × 수량의 합)
+- **Return**: 실현 PnL을 총 매수 대금으로 나눈 수익률
+
+### ⚠️ 결과 해석 시 주의 (모델 한계)
+
+이 백테스터는 단순화된 체결 모델을 사용합니다. 결과는 **낙관적 상한**으로 해석하세요:
+
+1. **체결 가정** — 리스크 체크를 통과한 주문은 전량 신호 가격에 체결된 것으로 간주합니다. 패시브 주문(best bid 매수)의 실제 체결 확률, 큐 순서, 부분 체결은 모델링하지 않습니다.
+2. **수수료·슬리피지 없음** — 예컨대 Binance 선물 메이커 수수료 0.02%만 반영해도 위 예시의 엣지(0.03%) 대부분이 사라집니다.
+3. **주문 레이트 리밋이 벽시계 기준** — 리스크 체크의 `max_orders_per_sec`는 실제 경과 시간을 사용하므로, 수 밀리초 만에 끝나는 백테스트에서는 주문이 초당 5건(기본값)에서 잘립니다. 거래 빈도가 높은 전략을 백테스트할 때는 `config/default.toml`의 `max_orders_per_sec`를 임시로 크게 올리고 돌리세요 (라이브 전환 전에 원복 필수).
 
 ## 히스토리컬 데이터로 실행
 
@@ -71,15 +105,19 @@ cargo run --bin backtest -- path/to/data.ndjson
 PnL per match = (sell_price - buy_price) * min(buy_qty, sell_qty)
 ```
 
-매칭되지 않은 잔여 포지션은 realized PnL에 포함되지 않습니다. 수수료와 슬리피지는 현재 모델링하지 않으므로, 결과는 낙관적 상한으로 해석해야 합니다.
+매칭되지 않은 잔여 포지션은 realized PnL에 포함되지 않습니다.
 
 ## 전략 교체
 
-`src/bin/backtest.rs`에서 `NoOpStrategy`를 자신의 전략으로 바꿉니다.
+자신의 전략을 백테스트하려면 `src/bin/backtest.rs`의 전략 선택 `match`에 한 줄 추가합니다.
 
 ```rust
-// let strategy = Box::new(NoOpStrategy);
-let strategy = Box::new(MyStrategy::new());
+let strategy: Box<dyn Strategy> = match strategy_name.as_str() {
+    "noop" => Box::new(NoOpStrategy),
+    "pingpong" => Box::new(PingPongStrategy::default()),
+    "mystrategy" => Box::new(MyStrategy::new()),   // 추가
+    ...
+};
 ```
 
 전략 구현 방법은 [전략 개발](../strategy-development/)을 참조하세요. 같은 전략 구조체를 `src/main.rs`와 `src/bin/backtest.rs` 양쪽에서 사용할 수 있으므로, 백테스트에서 검증한 코드가 그대로 실전에 올라갑니다.

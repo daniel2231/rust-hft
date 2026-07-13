@@ -5,6 +5,7 @@ pub mod execution;
 pub mod ingestion;
 pub mod metrics;
 pub mod orderbook;
+pub mod pnl;
 pub mod risk;
 pub mod strategy;
 pub mod types;

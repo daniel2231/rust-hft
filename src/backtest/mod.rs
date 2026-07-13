@@ -1,6 +1,7 @@
 pub mod data_loader;
 
 use crate::orderbook::Orderbook;
+use crate::pnl::FifoPnl;
 use crate::risk::RiskChecker;
 use crate::strategy::Strategy;
 use crate::types::{DepthSnapshot, DepthUpdate, Signal};
@@ -100,7 +101,14 @@ impl Backtester {
             }
         }
 
-        let realized_pnl = compute_fifo_pnl(&trades);
+        let mut pnl = FifoPnl::new();
+        for trade in &trades {
+            match trade.side {
+                TradeSide::Buy => pnl.on_buy(trade.price, trade.qty),
+                TradeSide::Sell => pnl.on_sell(trade.price, trade.qty),
+            }
+        }
+        let realized_pnl = pnl.realized_pnl();
         let buy_trades = trades.iter().filter(|t| matches!(t.side, TradeSide::Buy)).count();
         let sell_trades = trades.iter().filter(|t| matches!(t.side, TradeSide::Sell)).count();
         let total_volume: f64 = trades.iter().map(|t| t.qty).sum();
@@ -115,37 +123,4 @@ impl Backtester {
             trades,
         }
     }
-}
-
-/// FIFO PnL matching: each Buy is matched with the next Sell.
-/// PnL per pair = (sell_price - buy_price) * min(buy_qty, sell_qty)
-fn compute_fifo_pnl(trades: &[Trade]) -> f64 {
-    let mut buy_queue: std::collections::VecDeque<(f64, f64)> = std::collections::VecDeque::new();
-    let mut pnl = 0.0;
-
-    for trade in trades {
-        match trade.side {
-            TradeSide::Buy => {
-                buy_queue.push_back((trade.price, trade.qty));
-            }
-            TradeSide::Sell => {
-                let mut remaining_sell_qty = trade.qty;
-                while remaining_sell_qty > 1e-10 {
-                    if let Some((buy_price, buy_qty)) = buy_queue.front_mut() {
-                        let matched = remaining_sell_qty.min(*buy_qty);
-                        pnl += (trade.price - *buy_price) * matched;
-                        *buy_qty -= matched;
-                        remaining_sell_qty -= matched;
-                        if *buy_qty <= 1e-10 {
-                            buy_queue.pop_front();
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    pnl
 }

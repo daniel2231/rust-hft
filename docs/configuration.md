@@ -11,6 +11,7 @@ title: Configuration
 ```toml
 mode = "paper"     # "paper" 또는 "live" (live는 M6 이후)
 symbol = "BTCUSDT"
+strategy = "pingpong"   # "noop" | "pingpong"
 
 [risk]
 max_order_qty = 0.01          # 최대 주문 수량 (기초자산 단위, BTC)
@@ -41,6 +42,7 @@ enabled = true                # false면 대시보드 서버를 띄우지 않음
 |----|--------|------|
 | `mode` | `"paper"` | `paper`: 주문을 로그로만 기록. `live`: 실제 거래소 주문 (M6 이후 지원 예정) |
 | `symbol` | `"BTCUSDT"` | 구독할 심볼. Binance USDT-M 선물 심볼 표기를 따릅니다 |
+| `strategy` | `"noop"` | `crypto-trader`가 실행할 전략. `noop`(거래 없음) 또는 `pingpong`(테스트용 스프레드 캡처). 생략 시 `noop` |
 
 ### `[risk]` — 주문 안전장치
 

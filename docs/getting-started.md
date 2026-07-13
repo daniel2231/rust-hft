@@ -44,7 +44,7 @@ RUST_LOG=warn  cargo run --bin crypto-trader   # 경고·오류만
 [PAPER] 2026-06-15T09:00:05Z | BUY | BTCUSDT | qty=0.0100 | price=65000.00 | signal=Buy | client_id=uuid-xxxx
 ```
 
-> 기본 탑재된 `NoOpStrategy`는 항상 `Hold`를 반환하므로 주문이 발생하지 않습니다. 주문을 보려면 [전략 개발](../strategy-development/)을 따라 전략을 구현하세요.
+> 어떤 전략을 돌릴지는 `config/default.toml`의 `strategy` 키로 정합니다. `noop`은 항상 Hold라 주문이 없고, `pingpong`(테스트용 스프레드 캡처 전략)으로 두면 실시간 데이터 기준으로 페이퍼 주문이 발생하며 대시보드에서 수익률을 지켜볼 수 있습니다. 자기 전략을 만드는 방법은 [전략 개발](../strategy-development/)을 참조하세요.
 
 ## 킬 스위치
 

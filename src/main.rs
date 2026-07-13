@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
         .init();
 
     let cfg = config::load_config("config/default.toml")?;
-    info!(mode = %cfg.mode, symbol = %cfg.symbol, "crypto-trader starting");
+    info!(mode = %cfg.mode, symbol = %cfg.symbol, strategy = %cfg.strategy, "crypto-trader starting");
 
     let (market_tx, market_rx) = bounded::<types::MarketEvent>(1024);
     let (order_tx, order_rx) = bounded::<types::ValidatedOrder>(64);
@@ -59,7 +59,14 @@ async fn main() -> Result<()> {
             cfg_thread.symbol.clone(),
             cfg_thread.orderbook.depth_levels,
         );
-        let mut strat: Box<dyn strategy::Strategy> = Box::new(strategy::NoOpStrategy);
+        let mut strat: Box<dyn strategy::Strategy> = match cfg_thread.strategy.as_str() {
+            "pingpong" => Box::new(strategy::PingPongStrategy::default()),
+            "noop" => Box::new(strategy::NoOpStrategy),
+            other => {
+                tracing::warn!(strategy = other, "Unknown strategy in config — falling back to noop");
+                Box::new(strategy::NoOpStrategy)
+            }
+        };
         let mut risk = risk::RiskChecker::new(
             cfg_thread.risk.max_order_qty,
             cfg_thread.risk.min_free_balance_usdt,

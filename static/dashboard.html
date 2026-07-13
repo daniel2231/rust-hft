@@ -103,15 +103,26 @@
     </div>
   </div>
 
-  <!-- Row 3: Trades -->
-  <div class="row row-2">
+  <!-- Row 3: PnL + Trades -->
+  <div class="row row-3">
+    <div class="card">
+      <div class="card-title">수익률 (Paper)</div>
+      <div class="big-number" id="pnl-return">0.0000%</div>
+      <div class="sub-text" id="pnl-return-sub">실현 PnL / 총 매수 대금</div>
+      <div style="margin-top:12px">
+        <div class="stat-row"><span class="stat-label">실현 PnL</span><span class="stat-value" id="stat-realized">0.00 USDT</span></div>
+        <div class="stat-row"><span class="stat-label">미실현 PnL</span><span class="stat-value" id="stat-unrealized">—</span></div>
+        <div class="stat-row"><span class="stat-label">보유 포지션</span><span class="stat-value" id="stat-position">0.0000</span></div>
+        <div class="stat-row"><span class="stat-label">평균 진입가</span><span class="stat-value" id="stat-entry">—</span></div>
+      </div>
+    </div>
     <div class="card">
       <div class="card-title">Paper 거래 내역 (최근 50건)</div>
       <div style="max-height:260px;overflow-y:auto">
         <table>
           <thead><tr><th>시각</th><th>방향</th><th>가격</th><th>수량</th></tr></thead>
           <tbody id="trades-tbody">
-            <tr><td colspan="4" style="color:#8b949e;text-align:center;padding:20px">아직 거래 없음 (NoOpStrategy)</td></tr>
+            <tr><td colspan="4" style="color:#8b949e;text-align:center;padding:20px">아직 거래 없음</td></tr>
           </tbody>
         </table>
       </div>
@@ -268,6 +279,25 @@ function update(d) {
     }).join('');
     document.getElementById('trades-tbody').innerHTML = rows;
   }
+
+  // PnL
+  const pnlColor = (v) => v > 0 ? '#3fb950' : (v < 0 ? '#f85149' : '#f0f6fc');
+  const ret = document.getElementById('pnl-return');
+  ret.textContent = (d.return_pct >= 0 ? '+' : '') + d.return_pct.toFixed(4) + '%';
+  ret.style.color = pnlColor(d.return_pct);
+  const realized = document.getElementById('stat-realized');
+  realized.textContent = (d.realized_pnl >= 0 ? '+' : '') + d.realized_pnl.toFixed(2) + ' USDT';
+  realized.style.color = pnlColor(d.realized_pnl);
+  const unreal = document.getElementById('stat-unrealized');
+  if (d.unrealized_pnl !== null && d.unrealized_pnl !== undefined) {
+    unreal.textContent = (d.unrealized_pnl >= 0 ? '+' : '') + d.unrealized_pnl.toFixed(2) + ' USDT';
+    unreal.style.color = pnlColor(d.unrealized_pnl);
+  } else {
+    unreal.textContent = '—';
+    unreal.style.color = '';
+  }
+  document.getElementById('stat-position').textContent = d.position_qty.toFixed(4);
+  document.getElementById('stat-entry').textContent = d.avg_entry_price ? '$' + d.avg_entry_price.toFixed(2) : '—';
 
   // Stats
   document.getElementById('stat-buy').textContent = d.buy_count + '건';
