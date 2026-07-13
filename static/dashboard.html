@@ -114,15 +114,19 @@
   <!-- Row 3: PnL + Trades -->
   <div class="row row-3">
     <div class="card">
-      <div class="card-title">수익률 (Paper)</div>
+      <div class="card-title">가상 계좌 수익률 (Paper)</div>
       <div class="big-number" id="pnl-return">0.0000%</div>
-      <div class="sub-text" id="pnl-return-sub">실현 PnL / 총 매수 대금 · 수수료·슬리피지 미반영</div>
+      <div class="sub-text" id="pnl-return-sub">초기 자본 대비 · 수수료 반영 · 슬리피지 미반영</div>
       <div class="chart-wrap" style="height:90px;margin-top:10px">
         <canvas id="pnlChart"></canvas>
       </div>
       <div style="margin-top:12px">
+        <div class="stat-row"><span class="stat-label">초기 자본</span><span class="stat-value" id="stat-capital">—</span></div>
+        <div class="stat-row"><span class="stat-label">현재 자산</span><span class="stat-value" id="stat-equity">—</span></div>
+        <div class="stat-row"><span class="stat-label">현금 잔고</span><span class="stat-value" id="stat-cash">—</span></div>
         <div class="stat-row"><span class="stat-label">실현 PnL</span><span class="stat-value" id="stat-realized">0.00 USDT</span></div>
         <div class="stat-row"><span class="stat-label">미실현 PnL</span><span class="stat-value" id="stat-unrealized">—</span></div>
+        <div class="stat-row"><span class="stat-label">누적 수수료</span><span class="stat-value" id="stat-fees">0.00 USDT</span></div>
         <div class="stat-row"><span class="stat-label">보유 포지션</span><span class="stat-value" id="stat-position">0.0000</span></div>
         <div class="stat-row"><span class="stat-label">평균 진입가</span><span class="stat-value" id="stat-entry">—</span></div>
       </div>
@@ -327,11 +331,17 @@ function update(d) {
     document.getElementById('trades-tbody').innerHTML = rows;
   }
 
-  // PnL
+  // Virtual account / PnL
   const pnlColor = (v) => v > 0 ? '#3fb950' : (v < 0 ? '#f85149' : '#f0f6fc');
   const ret = document.getElementById('pnl-return');
-  ret.textContent = (d.return_pct >= 0 ? '+' : '') + d.return_pct.toFixed(4) + '%';
-  ret.style.color = pnlColor(d.return_pct);
+  ret.textContent = (d.capital_return_pct >= 0 ? '+' : '') + d.capital_return_pct.toFixed(4) + '%';
+  ret.style.color = pnlColor(d.capital_return_pct);
+  document.getElementById('stat-capital').textContent = d.initial_capital.toFixed(2) + ' USDT';
+  const equity = document.getElementById('stat-equity');
+  equity.textContent = d.equity.toFixed(2) + ' USDT';
+  equity.style.color = pnlColor(d.equity - d.initial_capital);
+  document.getElementById('stat-cash').textContent = d.cash_balance.toFixed(2) + ' USDT';
+  document.getElementById('stat-fees').textContent = d.total_fees.toFixed(2) + ' USDT';
   const realized = document.getElementById('stat-realized');
   realized.textContent = (d.realized_pnl >= 0 ? '+' : '') + d.realized_pnl.toFixed(2) + ' USDT';
   realized.style.color = pnlColor(d.realized_pnl);

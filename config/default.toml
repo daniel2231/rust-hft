@@ -2,6 +2,10 @@ mode = "paper"
 symbol = "BTCUSDT"
 strategy = "pingpong"   # "noop" | "pingpong"
 
+[paper]
+initial_capital_usdt = 730.0   # 가상 초기 자본 (USDT). 백만원 ≈ 730 USDT
+fee_pct = 0.02                 # 체결당 수수료 % (Binance 선물 maker 0.02 / taker 0.05)
+
 [risk]
 max_order_qty = 0.01
 min_free_balance_usdt = 100.0

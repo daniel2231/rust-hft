@@ -105,7 +105,9 @@ impl Backtester {
         for trade in &trades {
             match trade.side {
                 TradeSide::Buy => pnl.on_buy(trade.price, trade.qty),
-                TradeSide::Sell => pnl.on_sell(trade.price, trade.qty),
+                TradeSide::Sell => {
+                    pnl.on_sell(trade.price, trade.qty);
+                }
             }
         }
         let realized_pnl = pnl.realized_pnl();
