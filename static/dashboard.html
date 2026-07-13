@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>crypto-trader dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="icon" href="data:,">
+<script src="/chart.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0d1117; color: #e6edf3; font-family: 'Segoe UI', sans-serif; font-size: 14px; }
@@ -52,6 +53,12 @@
   .ob-bar-ask { height: 100%; background: #3d1f1f; border-radius: 2px; }
   .ob-section-title { font-size: 11px; color: #8b949e; margin: 8px 0 4px; text-transform: uppercase; letter-spacing: 1px; }
   #no-data { text-align: center; color: #8b949e; padding: 40px; }
+  @media (max-width: 900px) {
+    .row-3, .row-2 { grid-template-columns: 1fr; }
+    .topbar { flex-wrap: wrap; gap: 8px 16px; padding: 10px 16px; }
+    .topbar-price { font-size: 18px; }
+    .container { padding: 12px; }
+  }
 </style>
 </head>
 <body>
@@ -59,6 +66,7 @@
 <div class="topbar">
   <h1>crypto-trader</h1>
   <span id="sync-badge" class="badge badge-disconnected">Disconnected</span>
+  <span id="topbar-symbol" class="topbar-meta" style="font-weight:600;color:#e6edf3">—</span>
   <span id="topbar-price" class="topbar-price">—</span>
   <span id="topbar-spread" class="topbar-meta">spread: —</span>
   <span style="margin-left:auto" id="topbar-eps" class="topbar-meta">— events/sec</span>
@@ -90,7 +98,7 @@
   <!-- Row 2: Charts -->
   <div class="row row-2">
     <div class="card">
-      <div class="card-title">BTC 가격 (최근 5분)</div>
+      <div class="card-title" id="price-chart-title">가격 (최근 5분)</div>
       <div class="chart-wrap">
         <canvas id="priceChart"></canvas>
       </div>
@@ -108,7 +116,10 @@
     <div class="card">
       <div class="card-title">수익률 (Paper)</div>
       <div class="big-number" id="pnl-return">0.0000%</div>
-      <div class="sub-text" id="pnl-return-sub">실현 PnL / 총 매수 대금</div>
+      <div class="sub-text" id="pnl-return-sub">실현 PnL / 총 매수 대금 · 수수료·슬리피지 미반영</div>
+      <div class="chart-wrap" style="height:90px;margin-top:10px">
+        <canvas id="pnlChart"></canvas>
+      </div>
       <div style="margin-top:12px">
         <div class="stat-row"><span class="stat-label">실현 PnL</span><span class="stat-value" id="stat-realized">0.00 USDT</span></div>
         <div class="stat-row"><span class="stat-label">미실현 PnL</span><span class="stat-value" id="stat-unrealized">—</span></div>
@@ -128,13 +139,13 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-title">거래 통계</div>
+      <div class="card-title">세션 정보</div>
+      <div class="stat-row"><span class="stat-label">심볼</span><span class="stat-value" id="stat-symbol">—</span></div>
       <div class="stat-row"><span class="stat-label">총 매수</span><span class="stat-value" id="stat-buy">0건</span></div>
       <div class="stat-row"><span class="stat-label">총 매도</span><span class="stat-value" id="stat-sell">0건</span></div>
-      <div class="stat-row"><span class="stat-label">Best Bid</span><span class="stat-value" id="stat-bid">—</span></div>
-      <div class="stat-row"><span class="stat-label">Best Ask</span><span class="stat-value" id="stat-ask">—</span></div>
-      <div class="stat-row"><span class="stat-label">스프레드</span><span class="stat-value" id="stat-spread">—</span></div>
       <div class="stat-row"><span class="stat-label">오더북 상태</span><span class="stat-value" id="stat-sync">—</span></div>
+      <div class="stat-row"><span class="stat-label">측정 시작</span><span class="stat-value" id="stat-started">—</span></div>
+      <div class="stat-row"><span class="stat-label">가동 시간</span><span class="stat-value" id="stat-uptime">—</span></div>
     </div>
   </div>
 </div>
@@ -143,38 +154,61 @@
 let ws = null;
 let halted = false;
 
-// Price chart
-const ctx = document.getElementById('priceChart').getContext('2d');
-const priceChart = new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels: [],
-    datasets: [{
-      data: [],
-      borderColor: '#58a6ff',
-      borderWidth: 1.5,
-      pointRadius: 0,
-      fill: false,
-      tension: 0.1,
-    }]
+// Charts. Guarded so a Chart.js load failure degrades to "no charts"
+// instead of killing the whole dashboard script.
+const lineChartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { display: false },
+    y: {
+      grid: { color: '#21262d' },
+      ticks: { color: '#8b949e', font: { size: 11 } }
+    }
   },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { display: false },
-      y: {
-        grid: { color: '#21262d' },
-        ticks: { color: '#8b949e', font: { size: 11 } }
-      }
-    },
-    animation: false,
+  animation: false,
+};
+
+function makeLineChart(canvasId, color) {
+  try {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    return new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          data: [],
+          borderColor: color,
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.1,
+        }]
+      },
+      options: lineChartOptions,
+    });
+  } catch (e) {
+    console.error('chart init failed:', e);
+    return null;
   }
-});
+}
+
+const priceChart = makeLineChart('priceChart', '#58a6ff');
+const pnlChart = makeLineChart('pnlChart', '#3fb950');
+
+function updateLineChart(chart, series) {
+  if (!chart || !series || series.length === 0) return;
+  chart.data.labels = series.map((_, i) => i);
+  chart.data.datasets[0].data = series;
+  chart.update('none');
+}
 
 function connect() {
-  ws = new WebSocket('ws://' + location.hostname + ':3000/ws');
+  // location.host keeps the actual port (works with a changed config port
+  // or an SSH tunnel mapped to a different local port).
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  ws = new WebSocket(proto + location.host + '/ws');
   ws.onopen = () => {
     document.getElementById('conn-sub').textContent = '대시보드 서버 연결됨';
   };
@@ -197,8 +231,18 @@ function setDisconnected() {
   document.getElementById('conn-sub').textContent = '재연결 중...';
 }
 
+function formatUptime(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + (s % 60) + 's';
+  return s + 's';
+}
+
 function update(d) {
   // Topbar
+  document.getElementById('topbar-symbol').textContent = d.symbol || '—';
+  document.getElementById('price-chart-title').textContent = (d.symbol || '') + ' 가격 (최근 5분)';
   const price = d.best_bid ? d.best_bid.toFixed(2) : '—';
   document.getElementById('topbar-price').textContent = price ? '$' + price : '—';
   document.getElementById('topbar-spread').textContent = d.spread ? 'spread: $' + d.spread.toFixed(2) : 'spread: —';
@@ -243,11 +287,12 @@ function update(d) {
     killStatus.style.color = '#3fb950';
   }
 
-  // Price chart
-  if (d.price_history && d.price_history.length > 0) {
-    priceChart.data.labels = d.price_history.map((_, i) => i);
-    priceChart.data.datasets[0].data = d.price_history;
-    priceChart.update('none');
+  // Charts
+  updateLineChart(priceChart, d.price_history);
+  updateLineChart(pnlChart, d.pnl_history);
+  if (pnlChart && d.pnl_history && d.pnl_history.length > 0) {
+    const last = d.pnl_history[d.pnl_history.length - 1];
+    pnlChart.data.datasets[0].borderColor = last >= 0 ? '#3fb950' : '#f85149';
   }
 
   // Orderbook
@@ -271,7 +316,9 @@ function update(d) {
   // Trades
   if (d.recent_trades && d.recent_trades.length > 0) {
     const rows = [...d.recent_trades].reverse().map(t => {
-      const time = t.timestamp.split('T')[1]?.split('.')[0] || t.timestamp;
+      // Server timestamps are UTC — show them in the viewer's local timezone.
+      const parsed = new Date(t.timestamp);
+      const time = isNaN(parsed) ? t.timestamp : parsed.toLocaleTimeString('en-GB');
       const badge = t.side === 'BUY'
         ? `<span class="side-buy">BUY</span>`
         : `<span class="side-sell">SELL</span>`;
@@ -299,18 +346,30 @@ function update(d) {
   document.getElementById('stat-position').textContent = d.position_qty.toFixed(4);
   document.getElementById('stat-entry').textContent = d.avg_entry_price ? '$' + d.avg_entry_price.toFixed(2) : '—';
 
-  // Stats
+  // Session info
+  document.getElementById('stat-symbol').textContent = d.symbol || '—';
   document.getElementById('stat-buy').textContent = d.buy_count + '건';
   document.getElementById('stat-sell').textContent = d.sell_count + '건';
-  document.getElementById('stat-bid').textContent = d.best_bid ? '$' + d.best_bid.toFixed(2) : '—';
-  document.getElementById('stat-ask').textContent = d.best_ask ? '$' + d.best_ask.toFixed(2) : '—';
-  document.getElementById('stat-spread').textContent = d.spread ? '$' + d.spread.toFixed(2) : '—';
   document.getElementById('stat-sync').textContent = d.sync_state;
+  if (d.started_at_ms) {
+    const started = new Date(d.started_at_ms);
+    document.getElementById('stat-started').textContent = started.toLocaleTimeString('en-GB');
+    document.getElementById('stat-uptime').textContent = formatUptime(Date.now() - d.started_at_ms);
+  }
 }
 
 function toggleHalt() {
+  // Halting is the safe direction — do it immediately. Resuming re-enables
+  // live orders, so ask first to guard against misclicks.
+  if (halted && !confirm('주문을 재개할까요? 전략이 다시 주문을 내기 시작합니다.')) return;
   const endpoint = halted ? '/resume' : '/halt';
-  fetch(endpoint).catch(() => {});
+  fetch(endpoint).then(r => {
+    if (!r.ok) throw new Error(r.status);
+  }).catch(() => {
+    const killStatus = document.getElementById('kill-status');
+    killStatus.textContent = '⚠ 요청 실패 — 서버 상태를 확인하세요';
+    killStatus.style.color = '#d29922';
+  });
 }
 
 connect();

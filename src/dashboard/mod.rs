@@ -38,9 +38,16 @@ pub struct DashboardState {
     pub position_qty: f64,
     pub avg_entry_price: Option<f64>,
     pub unrealized_pnl: Option<f64>,
+    pub pnl_history: Vec<f64>,
+    pub symbol: String,
+    /// Process start, epoch milliseconds — the reference point for the PnL
+    /// figures (they reset on restart).
+    pub started_at_ms: u64,
 }
 
 pub struct SharedState {
+    pub symbol: String,
+    pub started_at_ms: u64,
     pub connected: AtomicBool,
     pub is_live: AtomicBool,
     pub event_count: AtomicU64,
@@ -54,14 +61,23 @@ pub struct SharedState {
     /// Paper-trading PnL, updated per fill by the execution task (off the
     /// hot path) and read once per second by the dashboard push.
     pub pnl: RwLock<FifoPnl>,
+    /// Total PnL (realized + mark-to-market) sampled once per second by the
+    /// dashboard sampler task — last 5 minutes.
+    pub pnl_history: RwLock<VecDeque<f64>>,
     /// Kill-switch flag shared with the risk checker; kept in sync with the
     /// HALT file by a background poller in main.
     pub halt_flag: Arc<AtomicBool>,
 }
 
 impl SharedState {
-    pub fn new(halt_flag: Arc<AtomicBool>) -> Arc<Self> {
+    pub fn new(symbol: String, halt_flag: Arc<AtomicBool>) -> Arc<Self> {
+        let started_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         Arc::new(Self {
+            symbol,
+            started_at_ms,
             connected: AtomicBool::new(false),
             is_live: AtomicBool::new(false),
             event_count: AtomicU64::new(0),
@@ -73,6 +89,7 @@ impl SharedState {
             events_last_sec: AtomicU64::new(0),
             events_last_checkpoint: AtomicU64::new(0),
             pnl: RwLock::new(FifoPnl::new()),
+            pnl_history: RwLock::new(VecDeque::with_capacity(300)),
             halt_flag,
         })
     }
@@ -91,6 +108,31 @@ impl SharedState {
             history.pop_front();
         }
         history.push_back(price);
+    }
+
+    /// Called once per second by the dashboard sampler task (single caller —
+    /// per-client sampling would reset the event checkpoint N times a second
+    /// and corrupt events/sec when multiple tabs are open).
+    pub fn sample_second(&self) {
+        let count = self.event_count.load(Ordering::Relaxed);
+        let last = self.events_last_checkpoint.swap(count, Ordering::Relaxed);
+        self.events_last_sec
+            .store(count.saturating_sub(last), Ordering::Relaxed);
+
+        let mark = self
+            .snapshot
+            .read()
+            .as_ref()
+            .and_then(|s| s.bids.first().map(|(p, _)| *p));
+        let total_pnl = {
+            let pnl = self.pnl.read();
+            pnl.realized_pnl() + mark.map_or(0.0, |m| pnl.unrealized_pnl(m))
+        };
+        let mut history = self.pnl_history.write();
+        if history.len() >= 300 {
+            history.pop_front();
+        }
+        history.push_back(total_pnl);
     }
 
     pub fn to_dashboard_state(&self) -> DashboardState {
@@ -116,9 +158,8 @@ impl SharedState {
         };
 
         let event_count = self.event_count.load(Ordering::Relaxed);
-        let last_checkpoint = self.events_last_checkpoint.load(Ordering::Relaxed);
-        let events_per_sec = (event_count.saturating_sub(last_checkpoint)) as f64;
-        self.events_last_checkpoint.store(event_count, Ordering::Relaxed);
+        let events_per_sec = self.events_last_sec.load(Ordering::Relaxed) as f64;
+        let pnl_history: Vec<f64> = self.pnl_history.read().iter().cloned().collect();
 
         DashboardState {
             connected: self.connected.load(Ordering::Relaxed),
@@ -140,6 +181,9 @@ impl SharedState {
             position_qty,
             avg_entry_price,
             unrealized_pnl,
+            pnl_history,
+            symbol: self.symbol.clone(),
+            started_at_ms: self.started_at_ms,
         }
     }
 }
