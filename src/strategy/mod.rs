@@ -1,3 +1,7 @@
+pub mod ping_pong;
+
+pub use ping_pong::PingPongStrategy;
+
 use crate::types::{OrderbookSnapshot, Signal};
 
 /// Strategy implementors must be Send so they can run on the dedicated OS thread.
