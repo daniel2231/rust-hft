@@ -10,8 +10,23 @@ use tokio::time::{interval, Duration};
 use tracing::info;
 
 pub async fn run_dashboard(state: Arc<SharedState>, port: u16) {
+    // Central once-per-second sampler: computes events/sec and appends to the
+    // PnL history. Doing this here (not per WebSocket client) keeps the
+    // numbers correct when several browser tabs are connected.
+    {
+        let state = Arc::clone(&state);
+        tokio::spawn(async move {
+            let mut tick = interval(Duration::from_secs(1));
+            loop {
+                tick.tick().await;
+                state.sample_second();
+            }
+        });
+    }
+
     let app = Router::new()
         .route("/", get(index_handler))
+        .route("/chart.js", get(chart_js_handler))
         .route("/ws", get(ws_handler))
         .route("/halt", get(halt_handler))
         .route("/resume", get(resume_handler))
@@ -39,6 +54,15 @@ async fn resume_handler(State(state): State<Arc<SharedState>>) -> impl IntoRespo
 
 async fn index_handler() -> impl IntoResponse {
     Html(include_str!("../../static/dashboard.html"))
+}
+
+// Chart.js is embedded in the binary and served locally so the dashboard
+// works without internet access (no CDN dependency).
+async fn chart_js_handler() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/javascript")],
+        include_str!("../../static/chart.umd.min.js"),
+    )
 }
 
 async fn ws_handler(
