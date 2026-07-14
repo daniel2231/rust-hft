@@ -11,11 +11,11 @@ title: Configuration
 ```toml
 mode = "paper"     # "paper" 또는 "live" (live는 M6 이후)
 symbol = "BTCUSDT"
-strategy = "pingpong"   # "noop" | "pingpong"
+strategy = "momentum"   # "noop" | "pingpong" | "momentum"
 
 [paper]
 initial_capital_usdt = 730.0   # 가상 초기 자본 (USDT). 백만원 ≈ 730 USDT
-fee_pct = 0.02                 # 체결당 수수료 % (Binance 선물 maker 0.02 / taker 0.05)
+fee_pct = 0.05                 # 체결당 수수료 % — momentum은 taker 체결이므로 0.05 (pingpong은 maker 0.02)
 
 [risk]
 max_order_qty = 0.01          # 최대 주문 수량 (기초자산 단위, BTC)
@@ -46,7 +46,7 @@ enabled = true                # false면 대시보드 서버를 띄우지 않음
 |----|--------|------|
 | `mode` | `"paper"` | `paper`: 주문을 로그로만 기록. `live`: 실제 거래소 주문 (M6 이후 지원 예정) |
 | `symbol` | `"BTCUSDT"` | 구독할 심볼. Binance USDT-M 선물 심볼 표기를 따릅니다 |
-| `strategy` | `"noop"` | `crypto-trader`가 실행할 전략. `noop`(거래 없음) 또는 `pingpong`(테스트용 스프레드 캡처). 생략 시 `noop` |
+| `strategy` | `"noop"` | `crypto-trader`가 실행할 전략. `noop`(거래 없음), `pingpong`(테스트용 스프레드 캡처), `momentum`(모멘텀 스캘핑). 생략 시 `noop` |
 
 ### `[paper]` — 가상 계좌 (Paper 모드)
 
