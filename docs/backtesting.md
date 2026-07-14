@@ -15,7 +15,7 @@ cargo run --bin backtest -- [data.ndjson] [--strategy noop|pingpong] [--events N
 | 옵션 | 기본값 | 설명 |
 |------|--------|------|
 | `data.ndjson` | (없음 → 합성 데이터) | 히스토리컬 데이터 파일 경로 |
-| `--strategy` | `noop` | 전략 선택. `pingpong`은 내장 스프레드 캡처 테스트 전략 |
+| `--strategy` | `noop` | 전략 선택: `noop` / `pingpong`(스프레드 캡처) / `momentum`(모멘텀 스캘핑) |
 | `--events` | `100` | 합성 데이터 모드에서 생성할 이벤트 수 (100ms 간격 → 10000개 ≈ 약 17분 분량) |
 
 ## 빠른 실행 — 합성 데이터

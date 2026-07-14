@@ -1,5 +1,7 @@
+pub mod momentum_scalp;
 pub mod ping_pong;
 
+pub use momentum_scalp::MomentumScalpStrategy;
 pub use ping_pong::PingPongStrategy;
 
 use crate::types::{OrderbookSnapshot, Signal};

@@ -64,12 +64,15 @@ async fn main() -> Result<()> {
             cfg_thread.symbol.clone(),
             cfg_thread.orderbook.depth_levels,
         );
+        // Entry sizes are capped at ~90% of the virtual capital so the
+        // strategies trade within the configured account.
+        let strategy_budget = cfg_thread.paper.initial_capital_usdt * 0.9;
         let mut strat: Box<dyn strategy::Strategy> = match cfg_thread.strategy.as_str() {
-            // Size ping-pong orders to ~90% of the virtual capital so the
-            // strategy actually trades within the configured account.
+            "momentum" => Box::new(
+                strategy::MomentumScalpStrategy::default().with_max_notional(strategy_budget),
+            ),
             "pingpong" => Box::new(
-                strategy::PingPongStrategy::default()
-                    .with_max_notional(cfg_thread.paper.initial_capital_usdt * 0.9),
+                strategy::PingPongStrategy::default().with_max_notional(strategy_budget),
             ),
             "noop" => Box::new(strategy::NoOpStrategy),
             other => {

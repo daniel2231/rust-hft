@@ -3,12 +3,12 @@ use crypto_trader::backtest::data_loader;
 use crypto_trader::backtest::{Backtester, TradeSide};
 use crypto_trader::config;
 use crypto_trader::risk::RiskChecker;
-use crypto_trader::strategy::{NoOpStrategy, PingPongStrategy, Strategy};
+use crypto_trader::strategy::{MomentumScalpStrategy, NoOpStrategy, PingPongStrategy, Strategy};
 
 fn main() -> Result<()> {
     let cfg = config::load_config("config/default.toml")?;
 
-    // Usage: backtest [data.ndjson] [--strategy noop|pingpong] [--events N]
+    // Usage: backtest [data.ndjson] [--strategy noop|pingpong|momentum] [--events N]
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut data_path: Option<String> = None;
     let mut strategy_name = "noop".to_string();
@@ -52,7 +52,8 @@ fn main() -> Result<()> {
     let strategy: Box<dyn Strategy> = match strategy_name.as_str() {
         "noop" => Box::new(NoOpStrategy),
         "pingpong" => Box::new(PingPongStrategy::default()),
-        other => anyhow::bail!("Unknown strategy '{}' (available: noop, pingpong)", other),
+        "momentum" => Box::new(MomentumScalpStrategy::default()),
+        other => anyhow::bail!("Unknown strategy '{}' (available: noop, pingpong, momentum)", other),
     };
 
     let risk = RiskChecker::new(
