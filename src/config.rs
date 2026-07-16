@@ -71,8 +71,10 @@ impl Default for MomentumConfig {
             lookback_ticks: 30,
             entry_mom_pct: 0.05,
             imbalance_min: 0.60,
-            tp_pct: 0.08,
-            stop_pct: 0.06,
+            // Take-profit must clear the round-trip cost (taker fee 0.05% ×2
+            // = 0.10% plus spread) or every "win" is a net loss.
+            tp_pct: 0.20,
+            stop_pct: 0.10,
             max_hold_ticks: 300,
             cooldown_ticks: 30,
         }

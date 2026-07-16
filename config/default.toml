@@ -11,8 +11,8 @@ qty = 0.01                # 진입 수량 (BTC). 실제 진입 수량은 가상 
 lookback_ticks = 30       # 모멘텀 관측 구간 (오더북 틱 수, ~100ms/틱 → 30틱 ≈ 3초)
 entry_mom_pct = 0.05      # 진입 문턱: lookback_ticks 동안 mid 가격이 이 % 이상 상승해야 함
 imbalance_min = 0.60      # 진입 확인: 상위 5레벨 매수 물량 비중이 이 값(0~1) 이상이어야 함
-tp_pct = 0.08             # 익절: 진입가 대비 +tp_pct%
-stop_pct = 0.06           # 손절: 진입가 대비 -stop_pct%
+tp_pct = 0.20             # 익절: 진입가 대비 +tp_pct% — 왕복 수수료(taker 0.05%×2=0.10%)+스프레드를 넘어야 순익 가능
+stop_pct = 0.10           # 손절: 진입가 대비 -stop_pct%
 max_hold_ticks = 300      # 시간 손절: 이 틱 수(≈300틱=30초)가 지나면 익절/손절 무관하게 강제 청산
 cooldown_ticks = 30       # 청산 후 재진입 금지 틱 수 (≈3초)
 

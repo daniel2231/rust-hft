@@ -118,10 +118,11 @@ impl MomentumScalpStrategy {
 
 impl Default for MomentumScalpStrategy {
     /// qty 0.01 (matches default risk max_order_qty), momentum +0.05% over
-    /// ~3s (30 ticks), bid imbalance ≥ 0.60, take profit +0.08%, stop −0.06%,
-    /// time stop 300 ticks (~30s), cooldown 30 ticks (~3s).
+    /// ~3s (30 ticks), bid imbalance ≥ 0.60, take profit +0.20% (must clear
+    /// the ~0.10% round-trip taker fee plus spread), stop −0.10%, time stop
+    /// 300 ticks (~30s), cooldown 30 ticks (~3s).
     fn default() -> Self {
-        Self::new(0.01, 30, 0.05, 0.60, 0.08, 0.06, 300, 30)
+        Self::new(0.01, 30, 0.05, 0.60, 0.20, 0.10, 300, 30)
     }
 }
 
