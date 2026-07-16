@@ -12,6 +12,11 @@ pub struct Config {
     /// Paper-trading virtual account settings.
     #[serde(default)]
     pub paper: PaperConfig,
+    /// Tunable parameters for the momentum/pingpong strategies.
+    #[serde(default)]
+    pub momentum: MomentumConfig,
+    #[serde(default)]
+    pub pingpong: PingPongConfig,
     pub risk: RiskConfig,
     pub orderbook: OrderbookConfig,
     pub exchange: ExchangeConfig,
@@ -33,6 +38,60 @@ impl Default for PaperConfig {
         Self {
             initial_capital_usdt: 10_000.0,
             fee_pct: 0.02,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MomentumConfig {
+    /// Order quantity per entry (base asset units), before capital sizing.
+    pub qty: f64,
+    /// Number of ~100ms orderbook ticks to look back for the momentum check.
+    pub lookback_ticks: usize,
+    /// Minimum mid-price rise over the lookback window to trigger entry (%).
+    pub entry_mom_pct: f64,
+    /// Minimum fraction (0.0-1.0) of top-5-level volume on the bid side to
+    /// confirm entry.
+    pub imbalance_min: f64,
+    /// Take-profit distance from entry price (%).
+    pub tp_pct: f64,
+    /// Stop-loss distance from entry price (%).
+    pub stop_pct: f64,
+    /// Force-close a position after this many ticks even without a
+    /// take-profit or stop-loss hit.
+    pub max_hold_ticks: u32,
+    /// Ticks to wait after closing a position before allowing re-entry.
+    pub cooldown_ticks: u32,
+}
+
+impl Default for MomentumConfig {
+    fn default() -> Self {
+        Self {
+            qty: 0.01,
+            lookback_ticks: 30,
+            entry_mom_pct: 0.05,
+            imbalance_min: 0.60,
+            tp_pct: 0.08,
+            stop_pct: 0.06,
+            max_hold_ticks: 300,
+            cooldown_ticks: 30,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct PingPongConfig {
+    pub qty: f64,
+    pub min_edge_pct: f64,
+    pub stop_pct: f64,
+}
+
+impl Default for PingPongConfig {
+    fn default() -> Self {
+        Self {
+            qty: 0.01,
+            min_edge_pct: 0.02,
+            stop_pct: 0.5,
         }
     }
 }

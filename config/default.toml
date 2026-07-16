@@ -6,6 +6,21 @@ strategy = "momentum"   # "noop" | "pingpong" | "momentum"
 initial_capital_usdt = 730.0   # 가상 초기 자본 (USDT). 백만원 ≈ 730 USDT
 fee_pct = 0.05                 # 체결당 수수료 % — momentum은 taker 체결이므로 0.05 (pingpong은 maker 0.02)
 
+[momentum]
+qty = 0.01                # 진입 수량 (BTC). 실제 진입 수량은 가상 자본의 90% 이내로 추가 제한됨
+lookback_ticks = 30       # 모멘텀 관측 구간 (오더북 틱 수, ~100ms/틱 → 30틱 ≈ 3초)
+entry_mom_pct = 0.05      # 진입 문턱: lookback_ticks 동안 mid 가격이 이 % 이상 상승해야 함
+imbalance_min = 0.60      # 진입 확인: 상위 5레벨 매수 물량 비중이 이 값(0~1) 이상이어야 함
+tp_pct = 0.08             # 익절: 진입가 대비 +tp_pct%
+stop_pct = 0.06           # 손절: 진입가 대비 -stop_pct%
+max_hold_ticks = 300      # 시간 손절: 이 틱 수(≈300틱=30초)가 지나면 익절/손절 무관하게 강제 청산
+cooldown_ticks = 30       # 청산 후 재진입 금지 틱 수 (≈3초)
+
+[pingpong]
+qty = 0.01                # 진입 수량 (BTC)
+min_edge_pct = 0.02       # 익절: 진입가 대비 +min_edge_pct%
+stop_pct = 0.5            # 손절: 진입가 대비 -stop_pct%
+
 [risk]
 max_order_qty = 0.01
 min_free_balance_usdt = 100.0

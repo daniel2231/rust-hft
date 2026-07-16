@@ -51,8 +51,23 @@ fn main() -> Result<()> {
 
     let strategy: Box<dyn Strategy> = match strategy_name.as_str() {
         "noop" => Box::new(NoOpStrategy),
-        "pingpong" => Box::new(PingPongStrategy::default()),
-        "momentum" => Box::new(MomentumScalpStrategy::default()),
+        "pingpong" => {
+            let p = &cfg.pingpong;
+            Box::new(PingPongStrategy::new(p.qty, p.min_edge_pct, p.stop_pct))
+        }
+        "momentum" => {
+            let m = &cfg.momentum;
+            Box::new(MomentumScalpStrategy::new(
+                m.qty,
+                m.lookback_ticks,
+                m.entry_mom_pct,
+                m.imbalance_min,
+                m.tp_pct,
+                m.stop_pct,
+                m.max_hold_ticks,
+                m.cooldown_ticks,
+            ))
+        }
         other => anyhow::bail!("Unknown strategy '{}' (available: noop, pingpong, momentum)", other),
     };
 

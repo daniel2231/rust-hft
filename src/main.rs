@@ -68,12 +68,29 @@ async fn main() -> Result<()> {
         // strategies trade within the configured account.
         let strategy_budget = cfg_thread.paper.initial_capital_usdt * 0.9;
         let mut strat: Box<dyn strategy::Strategy> = match cfg_thread.strategy.as_str() {
-            "momentum" => Box::new(
-                strategy::MomentumScalpStrategy::default().with_max_notional(strategy_budget),
-            ),
-            "pingpong" => Box::new(
-                strategy::PingPongStrategy::default().with_max_notional(strategy_budget),
-            ),
+            "momentum" => {
+                let m = &cfg_thread.momentum;
+                Box::new(
+                    strategy::MomentumScalpStrategy::new(
+                        m.qty,
+                        m.lookback_ticks,
+                        m.entry_mom_pct,
+                        m.imbalance_min,
+                        m.tp_pct,
+                        m.stop_pct,
+                        m.max_hold_ticks,
+                        m.cooldown_ticks,
+                    )
+                    .with_max_notional(strategy_budget),
+                )
+            }
+            "pingpong" => {
+                let p = &cfg_thread.pingpong;
+                Box::new(
+                    strategy::PingPongStrategy::new(p.qty, p.min_edge_pct, p.stop_pct)
+                        .with_max_notional(strategy_budget),
+                )
+            }
             "noop" => Box::new(strategy::NoOpStrategy),
             other => {
                 tracing::warn!(strategy = other, "Unknown strategy in config — falling back to noop");
