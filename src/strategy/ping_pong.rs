@@ -89,10 +89,22 @@ impl Strategy for PingPongStrategy {
 
         if best_ask >= take_profit {
             self.holding = false;
+            tracing::info!(
+                reason = "take_profit",
+                entry_price = self.entry_price,
+                exit_price = best_ask,
+                "PingPong exit"
+            );
             return Signal::Sell { price: best_ask, qty: self.entry_qty };
         }
         if best_bid <= stop_out {
             self.holding = false;
+            tracing::info!(
+                reason = "stop_loss",
+                entry_price = self.entry_price,
+                exit_price = best_bid,
+                "PingPong exit"
+            );
             return Signal::Sell { price: best_bid, qty: self.entry_qty };
         }
 

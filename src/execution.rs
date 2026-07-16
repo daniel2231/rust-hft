@@ -110,15 +110,16 @@ impl PaperExecutor {
         };
 
         {
+            let now_ms = Utc::now().timestamp_millis().max(0) as u64;
             let mut acct = state.account.write();
             match &order.signal {
                 Signal::Buy { .. } => {
                     state.buy_count.fetch_add(1, Ordering::Relaxed);
-                    acct.on_buy(price, qty);
+                    acct.on_buy(price, qty, now_ms);
                 }
                 Signal::Sell { .. } => {
                     state.sell_count.fetch_add(1, Ordering::Relaxed);
-                    acct.on_sell(price, qty);
+                    acct.on_sell(price, qty, now_ms);
                 }
                 Signal::Hold => {}
             }

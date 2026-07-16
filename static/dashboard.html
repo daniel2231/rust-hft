@@ -129,6 +129,9 @@
         <div class="stat-row"><span class="stat-label">누적 수수료</span><span class="stat-value" id="stat-fees">0.00 USDT</span></div>
         <div class="stat-row"><span class="stat-label">보유 포지션</span><span class="stat-value" id="stat-position">0.0000</span></div>
         <div class="stat-row"><span class="stat-label">평균 진입가</span><span class="stat-value" id="stat-entry">—</span></div>
+        <div class="stat-row"><span class="stat-label">라운드트립</span><span class="stat-value" id="stat-roundtrips">0회</span></div>
+        <div class="stat-row"><span class="stat-label">승률 (수수료 반영)</span><span class="stat-value" id="stat-winrate">—</span></div>
+        <div class="stat-row"><span class="stat-label">평균 보유 시간</span><span class="stat-value" id="stat-holdtime">—</span></div>
       </div>
     </div>
     <div class="card">
@@ -355,6 +358,17 @@ function update(d) {
   }
   document.getElementById('stat-position').textContent = d.position_qty.toFixed(4);
   document.getElementById('stat-entry').textContent = d.avg_entry_price ? '$' + d.avg_entry_price.toFixed(2) : '—';
+  document.getElementById('stat-roundtrips').textContent = d.round_trips + '회 (승 ' + d.wins + ' / 패 ' + d.losses + ')';
+  const winrate = document.getElementById('stat-winrate');
+  if (d.round_trips > 0) {
+    winrate.textContent = d.win_rate_pct.toFixed(1) + '%';
+    winrate.style.color = pnlColor(d.win_rate_pct - 50);
+  } else {
+    winrate.textContent = '—';
+    winrate.style.color = '';
+  }
+  document.getElementById('stat-holdtime').textContent =
+    d.round_trips > 0 ? d.avg_hold_secs.toFixed(1) + '초' : '—';
 
   // Session info
   document.getElementById('stat-symbol').textContent = d.symbol || '—';

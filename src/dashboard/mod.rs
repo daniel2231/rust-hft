@@ -44,6 +44,12 @@ pub struct DashboardState {
     /// Total return vs initial capital, fees included.
     pub capital_return_pct: f64,
     pub total_fees: f64,
+    /// Round-trip statistics (win/loss judged net of fees).
+    pub round_trips: u64,
+    pub wins: u64,
+    pub losses: u64,
+    pub win_rate_pct: f64,
+    pub avg_hold_secs: f64,
     pub symbol: String,
     /// Process start, epoch milliseconds — the reference point for the PnL
     /// figures (they reset on restart).
@@ -171,6 +177,7 @@ impl SharedState {
             equity,
             capital_return_pct,
             total_fees,
+            trade_stats,
         ) = {
             let acct = self.account.read();
             let pnl = acct.pnl();
@@ -184,6 +191,7 @@ impl SharedState {
                 acct.equity(best_bid),
                 acct.return_on_capital_pct(best_bid),
                 acct.total_fees(),
+                *acct.stats(),
             )
         };
 
@@ -216,6 +224,11 @@ impl SharedState {
             equity,
             capital_return_pct,
             total_fees,
+            round_trips: trade_stats.round_trips,
+            wins: trade_stats.wins,
+            losses: trade_stats.losses,
+            win_rate_pct: trade_stats.win_rate_pct(),
+            avg_hold_secs: trade_stats.avg_hold_secs(),
             symbol: self.symbol.clone(),
             started_at_ms: self.started_at_ms,
         }

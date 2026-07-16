@@ -104,7 +104,7 @@ impl Backtester {
         let mut pnl = FifoPnl::new();
         for trade in &trades {
             match trade.side {
-                TradeSide::Buy => pnl.on_buy(trade.price, trade.qty),
+                TradeSide::Buy => pnl.on_buy(trade.price, trade.qty, trade.timestamp_ms),
                 TradeSide::Sell => {
                     pnl.on_sell(trade.price, trade.qty);
                 }

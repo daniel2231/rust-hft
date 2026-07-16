@@ -2,6 +2,7 @@ use anyhow::Result;
 use crypto_trader::backtest::data_loader;
 use crypto_trader::backtest::{Backtester, TradeSide};
 use crypto_trader::config;
+use crypto_trader::pnl::PaperAccount;
 use crypto_trader::risk::RiskChecker;
 use crypto_trader::strategy::{MomentumScalpStrategy, NoOpStrategy, PingPongStrategy, Strategy};
 
@@ -93,6 +94,18 @@ fn main() -> Result<()> {
         0.0
     };
 
+    // Replay fills through a paper account (same capital/fee settings as
+    // live paper mode) for fee-adjusted stats: win rate, hold time, net PnL.
+    let mut account = PaperAccount::new(cfg.paper.initial_capital_usdt, cfg.paper.fee_pct);
+    for t in &result.trades {
+        match t.side {
+            TradeSide::Buy => account.on_buy(t.price, t.qty, t.timestamp_ms),
+            TradeSide::Sell => account.on_sell(t.price, t.qty, t.timestamp_ms),
+        }
+    }
+    let stats = *account.stats();
+    let net_pnl = result.realized_pnl - account.total_fees();
+
     println!("=== Backtest Result ===");
     println!("Strategy     : {}", strategy_name);
     println!("Total trades : {}", result.total_trades);
@@ -100,8 +113,17 @@ fn main() -> Result<()> {
     println!("Sell trades  : {}", result.sell_trades);
     println!("Total volume : {:.4}", result.total_volume);
     println!("Buy notional : {:.2} USDT", buy_notional);
-    println!("Realized PnL : {:.2} USDT", result.realized_pnl);
-    println!("Return       : {:.4}% (PnL / buy notional)", return_pct);
+    println!("Realized PnL : {:.2} USDT (gross)", result.realized_pnl);
+    println!("Fees         : {:.2} USDT ({}%/fill)", account.total_fees(), cfg.paper.fee_pct);
+    println!("Net PnL      : {:.2} USDT", net_pnl);
+    println!("Return       : {:.4}% (gross PnL / buy notional)", return_pct);
+    println!("--- Round trips (net of fees) ---");
+    println!("Round trips  : {} (win {} / loss {})", stats.round_trips, stats.wins, stats.losses);
+    println!("Win rate     : {:.1}%", stats.win_rate_pct());
+    println!("Avg hold     : {:.1}s", stats.avg_hold_secs());
+    if stats.gross_loss > 0.0 {
+        println!("Profit factor: {:.2}", stats.gross_profit / stats.gross_loss);
+    }
     println!("======================");
 
     Ok(())

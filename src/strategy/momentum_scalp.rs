@@ -139,12 +139,26 @@ impl Strategy for MomentumScalpStrategy {
             let take_profit = self.entry_price * (1.0 + self.tp_pct / 100.0);
             let stop_out = self.entry_price * (1.0 - self.stop_pct / 100.0);
 
-            if best_bid >= take_profit
-                || best_bid <= stop_out
-                || self.held_ticks >= self.max_hold_ticks
-            {
+            let exit_reason = if best_bid >= take_profit {
+                Some("take_profit")
+            } else if best_bid <= stop_out {
+                Some("stop_loss")
+            } else if self.held_ticks >= self.max_hold_ticks {
+                Some("time_stop")
+            } else {
+                None
+            };
+
+            if let Some(reason) = exit_reason {
                 self.holding = false;
                 self.cooldown_left = self.cooldown_ticks;
+                tracing::info!(
+                    reason,
+                    entry_price = self.entry_price,
+                    exit_price = best_bid,
+                    held_ticks = self.held_ticks,
+                    "Momentum exit"
+                );
                 return Signal::Sell { price: best_bid, qty: self.entry_qty };
             }
             return Signal::Hold;
@@ -180,6 +194,13 @@ impl Strategy for MomentumScalpStrategy {
         self.entry_price = best_ask;
         self.entry_qty = qty;
         self.held_ticks = 0;
+        tracing::info!(
+            momentum_pct,
+            bid_imbalance = bid_vol / total,
+            entry_price = best_ask,
+            qty,
+            "Momentum entry"
+        );
         Signal::Buy { price: best_ask, qty }
     }
 }
